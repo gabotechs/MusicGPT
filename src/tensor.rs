@@ -112,11 +112,6 @@ impl<T: TensorData> Tensor<T> {
         Tensor::from_array(concatenate(Axis(0), &[self.0.view(), self.0.view()]).unwrap())
     }
 
-    pub fn from_value<D: Dimension, Sh: ShapeBuilder<Dim = D>>(shape: Sh, value: T) -> Self {
-        let arr = Array::from_shape_simple_fn(shape, || value.clone());
-        Self(arr.into_dyn())
-    }
-
     pub fn squeeze(self, dim: i64) -> Self {
         let dim = if dim < 0 {
             (self.0.ndim() as i64 + dim) as usize

@@ -1,5 +1,5 @@
 use std::fmt::{Debug, Formatter};
-use std::ops::{Deref, DerefMut, Mul, Sub};
+use std::ops::{Deref, DerefMut};
 
 use ndarray::{s, Array, Array2, Axis, Ix2, Ix3, IxDyn};
 use num_traits::FloatConst;
