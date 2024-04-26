@@ -1,5 +1,5 @@
 use std::fmt::{Debug, Formatter};
-use std::ops::{Add, Deref, DerefMut, Mul, Sub};
+use std::ops::{Deref, DerefMut, Mul, Sub};
 
 use ndarray::{s, Array, Array2, Axis, Ix2, Ix3, IxDyn};
 use num_traits::FloatConst;
@@ -73,8 +73,8 @@ impl Logits {
         }
 
         let unguided_bsz = self.0.dim().0 / 2;
-        let cond_logits = self.0.slice(s![0..unguided_bsz, 0..]);
-        let uncond_logits = self.0.slice(s![unguided_bsz.., 0..]);
+        let cond_logits = self.0.slice(s![0..unguided_bsz, ..]);
+        let uncond_logits = self.0.slice(s![unguided_bsz.., ..]);
 
         // Based on transformers.js, src/generation/logits_process.js#L603:
         // scores = uncond_logits + (cond_logits - uncond_logits) * guidance_scale
@@ -92,7 +92,7 @@ impl Logits {
     /// returns: Vec<(i64, f32), Global> the per-batch sample
     pub fn sample(&self, k: usize) -> Vec<(i64, f32)> {
         let mut result = vec![];
-        let softmax_logits = self.0.softmax(Axis(0));
+        let softmax_logits = self.0.softmax(Axis(1));
         for batch in softmax_logits.axis_iter(Axis(0)) {
             let k = k.min(batch.len());
 
@@ -121,5 +121,17 @@ impl Logits {
             result.push((idx, softmax_prob.log(f32::E())))
         }
         result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn free_guidance() {
+        let logits = Logits::from(Array::from(vec![[10., -1., 3.], [-1., 1., 11.]]).into_dyn());
+        let logits = logits.apply_free_guidance(3);
+        assert_eq!(logits.shape(), &[1, 3]);
     }
 }

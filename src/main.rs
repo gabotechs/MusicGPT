@@ -1,15 +1,17 @@
-use std::ops::Mul;
-
 use clap::Parser;
-use ndarray::{Array, Axis};
-use ort::SessionInputs;
+use ndarray::Array;
 use tokenizers::Tokenizer;
 
-use crate::logits::Logits;
-use crate::session_input_builder::SessionInputsBuilder;
+use crate::input_ids::InputIds;
 use tensor::Tensor;
 
+use crate::logits::Logits;
+use crate::past_key_values::{PastKeyValues, PastKeyValuesConfig};
+use crate::session_input_builder::SessionInputsBuilder;
+
+mod input_ids;
 mod logits;
+mod past_key_values;
 mod session_input_builder;
 mod tensor;
 
@@ -40,29 +42,29 @@ struct MusicGen {
 
 impl MusicGen {
     fn load() -> ort::Result<Self> {
-        let mut tokenizer = Tokenizer::from_file("musicgen_onnx/tokenizer.json")?;
+        let mut tokenizer = Tokenizer::from_file("onnx/tokenizer.json")?;
 
         tokenizer.with_padding(None).with_truncation(None)?;
 
         let text_encoder = ort::Session::builder()?
             .with_optimization_level(ort::GraphOptimizationLevel::Level3)?
             .with_inter_threads(4)?
-            .commit_from_file("musicgen_onnx/text_encoder.onnx")?;
+            .commit_from_file("onnx/text_encoder.onnx")?;
 
         let decoder = ort::Session::builder()?
             .with_optimization_level(ort::GraphOptimizationLevel::Level3)?
             .with_inter_threads(4)?
-            .commit_from_file("musicgen_onnx/decoder_model_merged.onnx")?;
+            .commit_from_file("onnx/decoder_model_merged.onnx")?;
 
         let delay_pattern_mask = ort::Session::builder()?
             .with_optimization_level(ort::GraphOptimizationLevel::Level3)?
             .with_inter_threads(4)?
-            .commit_from_file("musicgen_onnx/build_delay_pattern_mask.onnx")?;
+            .commit_from_file("onnx/build_delay_pattern_mask.onnx")?;
 
         let audio_encodec_decode = ort::Session::builder()?
             .with_optimization_level(ort::GraphOptimizationLevel::Level3)?
             .with_inter_threads(4)?
-            .commit_from_file("musicgen_onnx/encodec_decode.onnx")?;
+            .commit_from_file("onnx/encodec_decode.onnx")?;
 
         Ok(Self {
             tokenizer,
@@ -92,9 +94,8 @@ impl MusicGen {
             .collect::<Vec<i64>>();
 
         let seq_len = input_ids.len();
-        let input_ids = Array::from(input_ids)
-            .into_shape((1, seq_len))
-            .expect("Could not reshape inputs");
+        let input_ids =
+            Array::from_shape_vec((1, seq_len), input_ids).expect("Could not reshape inputs");
         let attention_mask: Array<i64, _> = Array::ones((1, seq_len));
         Ok((
             Tensor::from_array(input_ids),
@@ -114,28 +115,6 @@ impl MusicGen {
         Tensor::try_from(output.remove("last_hidden_state").unwrap())
     }
 
-    fn empty_past_key_values() -> Vec<Tensor<f32>> {
-        let mut values = vec![];
-        let encoder_dims = (1, NUM_ENCODER_HEADS, 0, ENCODER_DIM_KV);
-        let decoder_dims = (1, NUM_DECODER_HEADS, 0, DECODER_DIM_KV);
-        for _ in 0..NUM_DECODER_LAYERS {
-            // "past_key_values.0.decoder.key"
-            // "past_key_values.0.decoder.value"
-            // "past_key_values.0.encoder.key"
-            // "past_key_values.0.encoder.value"
-
-            // format!("past_key_values.{i}.decoder.key"),
-            values.push(Tensor::from_array(Array::<f32, _>::zeros(decoder_dims)));
-            // format!("past_key_values.{i}.decoder.value"),
-            values.push(Tensor::from_array(Array::<f32, _>::zeros(decoder_dims)));
-            // format!("past_key_values.{i}.encoder.key"),
-            values.push(Tensor::from_array(Array::<f32, _>::zeros(encoder_dims)));
-            // format!("past_key_values.{i}.encoder.value"),
-            values.push(Tensor::from_array(Array::<f32, _>::zeros(encoder_dims)));
-        }
-        values
-    }
-
     fn generation_step(
         &self,
         last_hidden_state: &Tensor<f32>,
@@ -146,18 +125,36 @@ impl MusicGen {
         let encoder_hidden_states = last_hidden_state.dupe_zeros_along_first_dim();
         let encoder_attention_mask = attention_mask.dupe_zeros_along_first_dim();
 
-        let mut input_ids = Tensor::from_value((4, 1), PAD_TOKEN_ID).dupe_along_first_dim();
-        let mut use_cache_branch = Tensor::bool(false);
-        let mut past_key_values = Self::empty_past_key_values();
+        let mut input_ids = InputIds::<4>::new();
+        input_ids.push([PAD_TOKEN_ID, PAD_TOKEN_ID, PAD_TOKEN_ID, PAD_TOKEN_ID]);
+        let mut past_key_values = PastKeyValues::empty(PastKeyValuesConfig {
+            num_encoder_heads: NUM_ENCODER_HEADS,
+            num_decoder_heads: NUM_DECODER_HEADS,
+            encoder_dim_kv: ENCODER_DIM_KV,
+            decoder_dim_kv: DECODER_DIM_KV,
+            num_decoder_layers: NUM_DECODER_LAYERS,
+        });
 
         loop {
+            let prepared_input_ids = input_ids
+                .apply_delay_pattern_mask(PAD_TOKEN_ID)
+                .last()
+                .unsqueeze(1)
+                .dupe_along_first_dim();
+
+            println!("input_ids: {prepared_input_ids:?}\n");
+            println!("encoder_hidden_states: {encoder_hidden_states:?}\n");
+            println!("encoder_attention_mask: {encoder_attention_mask:?}\n");
+
+            let has_past_key_values = !past_key_values.is_empty();
+
             let outputs = self.decoder_model_merged.run(
                 SessionInputsBuilder::start()
                     .add(encoder_attention_mask.view())
-                    .add(input_ids.view())
+                    .add(prepared_input_ids.view())
                     .add(encoder_hidden_states.view())
-                    .add_many(past_key_values.iter().map(|e| e.view()))
-                    .add(use_cache_branch.view())
+                    .add_many(past_key_values.view_all())
+                    .add(Tensor::bool(has_past_key_values).view())
                     .end(),
             )?;
 
@@ -166,24 +163,41 @@ impl MusicGen {
             let logits = logits.apply_free_guidance(GUIDANCE_SCALE);
             println!("logits: {logits:?}\n");
 
-            let mut generated_input_ids = vec![];
-            for (token_id, _) in logits.sample(TOP_K) {
-                generated_input_ids.push(token_id)
-            }
+            input_ids.push(logits.sample(TOP_K).iter().map(|e| e.0));
 
-            let input_ids_arr = Array::from_shape_vec((4, 1), generated_input_ids)
-                .expect("Could not generate input_ids array");
-            input_ids = Tensor::from_array(input_ids_arr).dupe_along_first_dim();
             println!("generated input_ids: {input_ids:?}\n");
 
-            past_key_values = Vec::with_capacity(outputs.len() - 1);
-            for i in 1..outputs.len() {
-                past_key_values.push(Tensor::try_from(&outputs[i])?)
+            // `outputs` is:
+            // [
+            //   logits,
+            //   past_key_values.0.decoder.key,
+            //   past_key_values.0.decoder.value,
+            //   past_key_values.0.encoder.key,
+            //   past_key_values.0.encoder.value,
+            //   ...,
+            //   past_key_values.n.decoder.key,
+            //   past_key_values.n.decoder.value,
+            //   past_key_values.n.encoder.key,
+            //   past_key_values.n.encoder.value
+            // ]
+            for i in 0..(outputs.len() - 1) / 4 {
+                let idx = (i * 4) + 1;
+                if has_past_key_values {
+                    // Optimization introduced by optimum to reuse past key values. So, we just replace the constant
+                    // outputs with the previous past key values.
+                    // https://github.com/huggingface/optimum/blob/0bf2c05fb7e1182b52d21b703cfc95fd9e4ea3dc/optimum/onnxruntime/base.py#L677-L704
+                    past_key_values.set(i, 0, Tensor::try_from(&outputs[idx])?);
+                    past_key_values.set(i, 1, Tensor::try_from(&outputs[idx + 1])?);
+                    // past_key_values.set(i, 2, Tensor::try_from(&outputs[idx + 2])?); optimization consist on omitting the replacement of the "encoder" key-values
+                    // past_key_values.set(i, 3, Tensor::try_from(&outputs[idx + 3])?);
+                } else {
+                    past_key_values.set(i, 0, Tensor::try_from(&outputs[idx])?);
+                    past_key_values.set(i, 1, Tensor::try_from(&outputs[idx + 1])?);
+                    past_key_values.set(i, 2, Tensor::try_from(&outputs[idx + 2])?);
+                    past_key_values.set(i, 3, Tensor::try_from(&outputs[idx + 3])?);
+                }
             }
-            use_cache_branch = Tensor::bool(true);
         }
-
-        todo!()
     }
 }
 
@@ -194,13 +208,10 @@ fn main() -> anyhow::Result<()> {
 
     let (input_ids, attention_mask) = music_gen.tokenize(&args.prompt)?;
 
-    println!("input_ids: {input_ids:?}");
-    println!("attention_mask: {attention_mask:?}");
     let last_hidden_state = music_gen.encode_tokens(&input_ids, &attention_mask)?;
-    println!("last_hidden_state: {last_hidden_state:?}");
 
     let generated = music_gen.generation_step(&last_hidden_state, &attention_mask)?;
-    println!("generated: {generated:?}");
+    println!("generated: {generated:?}\n");
 
     Ok(())
 }
