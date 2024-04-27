@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Formatter};
 use std::ops::{Deref, DerefMut};
 
-use ndarray::{concatenate, Array, Axis, Dimension, IxDyn, RemoveAxis, ShapeBuilder};
+use ndarray::{concatenate, Array, Axis, IxDyn, RemoveAxis};
 use num_traits::Zero;
 
 pub trait TensorData: Clone + Debug + ort::IntoTensorElementType {}
@@ -124,6 +124,10 @@ impl<T: TensorData> Tensor<T> {
     pub fn unsqueeze(mut self, dim: usize) -> Self {
         self.0.insert_axis_inplace(Axis(dim));
         Self(self.0)
+    }
+
+    pub fn into_inner(self) -> Array<T, IxDyn> {
+        self.0
     }
 }
 

@@ -1,5 +1,5 @@
 use clap::Parser;
-use ndarray::Array;
+use ndarray::{Array, Array3, Axis};
 use tokenizers::Tokenizer;
 
 use crate::input_ids::InputIds;
@@ -25,6 +25,8 @@ const ENCODER_DIM_KV: usize = 64;
 const DECODER_DIM_KV: usize = 64;
 const GUIDANCE_SCALE: usize = 3;
 const TOP_K: usize = 50;
+const MAX_LEN: usize = 100;
+const SAMPLING_RATE: usize = 32000;
 
 #[derive(Parser)]
 struct Args {
@@ -119,7 +121,7 @@ impl MusicGen {
         &self,
         last_hidden_state: &Tensor<f32>,
         attention_mask: &Tensor<i64>,
-    ) -> ort::Result<ort::DynValue> {
+    ) -> ort::Result<InputIds<4>> {
         // Apparently, there's a setting in huggingface's transformers that says that
         // if `guidance_scale` > 1 then you should concatenate 0 along the first axis.
         let encoder_hidden_states = last_hidden_state.dupe_zeros_along_first_dim();
@@ -135,16 +137,16 @@ impl MusicGen {
             num_decoder_layers: NUM_DECODER_LAYERS,
         });
 
-        loop {
+        for _ in 0..MAX_LEN {
             let prepared_input_ids = input_ids
                 .apply_delay_pattern_mask(PAD_TOKEN_ID)
                 .last()
                 .unsqueeze(1)
                 .dupe_along_first_dim();
 
-            println!("input_ids: {prepared_input_ids:?}\n");
-            println!("encoder_hidden_states: {encoder_hidden_states:?}\n");
-            println!("encoder_attention_mask: {encoder_attention_mask:?}\n");
+            // println!("input_ids: {prepared_input_ids:?}\n");
+            // println!("encoder_hidden_states: {encoder_hidden_states:?}\n");
+            // println!("encoder_attention_mask: {encoder_attention_mask:?}\n");
 
             let has_past_key_values = !past_key_values.is_empty();
 
@@ -161,11 +163,10 @@ impl MusicGen {
             // logits: float32[batch_size,decoder_sequence_length,2048]
             let logits = Logits::from_3d_dyn_value(&outputs[0])?;
             let logits = logits.apply_free_guidance(GUIDANCE_SCALE);
-            println!("logits: {logits:?}\n");
+            // println!("logits: {logits:?}\n");
 
             input_ids.push(logits.sample(TOP_K).iter().map(|e| e.0));
-
-            println!("generated input_ids: {input_ids:?}\n");
+            // println!("generated input_ids: {input_ids:?}\n");
 
             // `outputs` is:
             // [
@@ -198,6 +199,45 @@ impl MusicGen {
                 }
             }
         }
+
+        Ok(input_ids)
+    }
+
+    pub fn encode_audio(&self, input_ids: InputIds<4>) -> ort::Result<Vec<f32>> {
+        let (bs_x_codebooks, seq_len) = input_ids.dims();
+        let n_codebooks = 4;
+        let bs = bs_x_codebooks / n_codebooks;
+        let upper_bound = seq_len - n_codebooks;
+
+        let mut data = vec![];
+        for i in 0..bs_x_codebooks * seq_len {
+            if input_ids[i] == PAD_TOKEN_ID {
+                continue;
+            }
+
+            let row = i % seq_len;
+            let col = (i / seq_len) % n_codebooks;
+
+            let diff = row as i64 - col as i64;
+            if diff > 0 && diff <= upper_bound as i64 {
+                data.push(input_ids[i])
+            }
+        }
+
+        let new_seq_len = data.len() / (bs_x_codebooks);
+
+        let arr = Array3::from_shape_vec((bs, n_codebooks, new_seq_len), data)
+            .expect("Could not build 3d array");
+
+        let arr = arr.insert_axis(Axis(0));
+
+        let mut outputs = self.audio_encodec_decode.run(ort::inputs![arr.view()]?)?;
+
+        let result = Tensor::<f32>::try_from(outputs.remove("audio_values").expect(""))?;
+
+        let result = result.squeeze(0).squeeze(0).into_inner().into_raw_vec();
+
+        Ok(result)
     }
 }
 
@@ -211,7 +251,18 @@ fn main() -> anyhow::Result<()> {
     let last_hidden_state = music_gen.encode_tokens(&input_ids, &attention_mask)?;
 
     let generated = music_gen.generation_step(&last_hidden_state, &attention_mask)?;
-    println!("generated: {generated:?}\n");
 
+    let encoded = music_gen.encode_audio(generated)?;
+
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate: SAMPLING_RATE as u32,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut writer = hound::WavWriter::create("out.wav", spec).unwrap();
+    for sample in encoded {
+        writer.write_sample(sample).unwrap();
+    }
     Ok(())
 }
