@@ -27,12 +27,13 @@ const ENCODER_DIM_KV: usize = 64;
 const DECODER_DIM_KV: usize = 64;
 const GUIDANCE_SCALE: usize = 3;
 const TOP_K: usize = 50;
-const MAX_LEN: usize = 500;
+const MAX_LEN: usize = 300;
 
 async fn build_session<P: AsRef<Path> + Debug>(path: P) -> ort::Result<ort::Session> {
     println!("Loading {path:?}...");
     ort::Session::builder()?
         .with_optimization_level(GraphOptimizationLevel::Level1)?
+        .with_optimization_level(GraphOptimizationLevel::Level2)?
         .with_inter_threads(8)?
         .with_execution_providers([
             // Prefer TensorRT over CUDA.
@@ -167,9 +168,12 @@ impl MusicGen {
                 let logits = logits.apply_free_guidance(GUIDANCE_SCALE);
 
                 input_ids.push(logits.sample(TOP_K).iter().map(|e| e.0));
-                let sent = tx.send(input_ids.last_raw());
-                if sent.is_err() {
-                    break;
+
+                if let Some(last_de_delayed) = input_ids.last_de_delayed() {
+                    let sent = tx.send(last_de_delayed);
+                    if sent.is_err() {
+                        break;
+                    }
                 }
 
                 // `outputs` is:
@@ -211,30 +215,14 @@ impl MusicGen {
     }
 
     pub fn encode_audio(&self, input_ids: [Vec<i64>; 4]) -> ort::Result<Vec<f32>> {
-        let n_codebooks = 4;
-        let bs = 1;
-        let upper_bound = MAX_LEN - n_codebooks;
-
-        let mut data = vec![];
-        for i in 0..bs * n_codebooks * MAX_LEN {
-            // We want to trim away the Ps
-            //   0 1 2 3 4 5 6 7 8 9  <- col
-            // 0 P x x x x x x P P P
-            // 1 P P x x x x x x P P
-            // 2 P P P x x x x x x P
-            // 3 P P P P x x x x x x
-
-            let col = i % MAX_LEN;
-            let row = (i / MAX_LEN) % n_codebooks;
-
-            let diff = col as i64 - row as i64;
-            if diff > 0 && diff <= upper_bound as i64 {
-                data.push(input_ids[row][col])
+        let seq_len = input_ids[0].len();
+        let mut data = Vec::with_capacity(seq_len * 4);
+        for batch in input_ids {
+            for n in batch {
+                data.push(n)
             }
         }
-
-        let new_seq_len = data.len() / (bs * n_codebooks);
-        let tensor = Tensor::from_shape_vec((bs, n_codebooks, new_seq_len), data).unsqueeze(0);
+        let tensor = Tensor::from_shape_vec((1, 1, 4, seq_len), data);
 
         let mut outputs = self
             .audio_encodec_decode

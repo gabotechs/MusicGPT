@@ -87,7 +87,7 @@ impl<const N: usize> InputIds<N> {
         // 1 P P x x x x x x P P
         // 2 P P P x x x x x x P
         // 3 P P P P x x x x x x
-        if self.batches[0].len() < N {
+        if self.batches[0].len() < N + 1 {
             return None;
         }
         let mut result = [0; N];
