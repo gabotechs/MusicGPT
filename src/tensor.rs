@@ -1,8 +1,8 @@
 use std::fmt::{Debug, Formatter};
 use std::ops::{Deref, DerefMut};
 
-use ndarray::{concatenate, Array, Axis, IxDyn, RemoveAxis};
-use num_traits::Zero;
+use ndarray::{concatenate, Array, Axis, Dimension, IxDyn, RemoveAxis, ShapeBuilder};
+use num_traits::{One, Zero};
 
 pub trait TensorData: Clone + Debug + ort::IntoTensorElementType {}
 
@@ -108,6 +108,17 @@ impl<T: TensorData> Tensor<T> {
         Self(value.into_dyn())
     }
 
+    pub fn from_shape_vec<D: Dimension, Sh: ShapeBuilder<Dim = D>>(
+        shape: Sh,
+        data: Vec<T>,
+    ) -> Self {
+        Self(
+            Array::from_shape_vec(shape, data)
+                .expect("Could not create tensor from shape and vector")
+                .into_dyn(),
+        )
+    }
+
     pub fn dupe_along_first_dim(&self) -> Self {
         Tensor::from_array(concatenate(Axis(0), &[self.0.view(), self.0.view()]).unwrap())
     }
@@ -128,6 +139,12 @@ impl<T: TensorData> Tensor<T> {
 
     pub fn into_inner(self) -> Array<T, IxDyn> {
         self.0
+    }
+}
+
+impl<T: TensorData + One> Tensor<T> {
+    pub fn ones<D: Dimension, Sh: ShapeBuilder<Dim = D>>(shape: Sh) -> Self {
+        Self(Array::<T, D>::ones(shape).into_dyn())
     }
 }
 

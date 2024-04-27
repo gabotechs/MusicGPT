@@ -1,4 +1,4 @@
-use ndarray::{Array1, Array2, ArrayView1};
+use ndarray::{Array1, Array2};
 use std::ops::Index;
 
 use crate::tensor::Tensor;
@@ -69,6 +69,32 @@ impl<const N: usize> InputIds<N> {
         }
 
         Tensor::from_array(Array1::from(last).into_dyn())
+    }
+
+    pub fn last_raw(&self) -> [i64; N] {
+        let mut result = [0; N];
+        for i in 0..N {
+            result[i] = *self.batches[i].last().expect("There are no input_ids");
+        }
+
+        result
+    }
+
+    pub fn last_de_delayed(&self) -> Option<[i64; N]> {
+        // We want to trim away the Ps
+        //   0 1 2 3 4 5 6 7 8 9
+        // 0 P x x x x x x P P P
+        // 1 P P x x x x x x P P
+        // 2 P P P x x x x x x P
+        // 3 P P P P x x x x x x
+        if self.batches[0].len() < N {
+            return None;
+        }
+        let mut result = [0; N];
+        for i in 0..N {
+            result[i] = self.batches[i][self.batches[i].len() - N + i]
+        }
+        Some(result)
     }
 
     pub fn tensor(&self) -> Tensor<i64> {

@@ -1,0 +1,5 @@
+[target.aarch64-apple-darwin]
+rustflags = ["-Clink-arg=-fapple-link-rtlib"]
+
+[target.x86_64-apple-darwin]
+rustflags = ["-Clink-arg=-fapple-link-rtlib"]
