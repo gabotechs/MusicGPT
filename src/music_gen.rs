@@ -11,7 +11,7 @@ use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
 
-use crate::input_ids::InputIds;
+use crate::delay_pattern_mask_ids::DelayedPatternMaskIds;
 use crate::logits::Logits;
 use crate::past_key_values::{PastKeyValues, PastKeyValuesConfig};
 use crate::session_input_builder::SessionInputsBuilder;
@@ -27,7 +27,7 @@ const ENCODER_DIM_KV: usize = 64;
 const DECODER_DIM_KV: usize = 64;
 const GUIDANCE_SCALE: usize = 3;
 const TOP_K: usize = 50;
-const MAX_LEN: usize = 300;
+const MAX_LEN: usize = 500;
 
 async fn build_session<P: AsRef<Path> + Debug>(path: P) -> ort::Result<ort::Session> {
     println!("Loading {path:?}...");
@@ -124,8 +124,7 @@ impl MusicGen {
         let encoder_hidden_states = last_hidden_state.dupe_zeros_along_first_dim();
         let encoder_attention_mask = attention_mask.dupe_zeros_along_first_dim();
 
-        let mut input_ids = InputIds::<4>::new();
-        input_ids.push([PAD_TOKEN_ID, PAD_TOKEN_ID, PAD_TOKEN_ID, PAD_TOKEN_ID]);
+        let mut delay_pattern_mask_ids = DelayedPatternMaskIds::<4>::new();
         let mut past_key_values = PastKeyValues::empty(PastKeyValuesConfig {
             num_encoder_heads: NUM_ENCODER_HEADS,
             num_decoder_heads: NUM_DECODER_HEADS,
@@ -142,11 +141,13 @@ impl MusicGen {
             let bar = Self::make_bar();
             for i in 0..MAX_LEN {
                 bar.set_position(i as u64);
-                let prepared_input_ids = input_ids
-                    .apply_delay_pattern_mask(PAD_TOKEN_ID)
-                    .last()
-                    .unsqueeze(1)
-                    .dupe_along_first_dim();
+                let prepared_input_ids = Tensor::from_shape_vec(
+                    (4, 1),
+                    delay_pattern_mask_ids
+                        .last_delayed_masked(PAD_TOKEN_ID)
+                        .to_vec(),
+                )
+                .dupe_along_first_dim();
 
                 let has_past_key_values = !past_key_values.is_empty();
 
@@ -167,9 +168,9 @@ impl MusicGen {
                     .expect("Error extracting logits from onnx runtime value");
                 let logits = logits.apply_free_guidance(GUIDANCE_SCALE);
 
-                input_ids.push(logits.sample(TOP_K).iter().map(|e| e.0));
+                delay_pattern_mask_ids.push(logits.sample(TOP_K).iter().map(|e| e.0));
 
-                if let Some(last_de_delayed) = input_ids.last_de_delayed() {
+                if let Some(last_de_delayed) = delay_pattern_mask_ids.last_de_delayed() {
                     let sent = tx.send(last_de_delayed);
                     if sent.is_err() {
                         break;

@@ -2,7 +2,7 @@ use clap::Parser;
 
 use crate::music_gen::MusicGen;
 
-mod input_ids;
+mod delay_pattern_mask_ids;
 mod logits;
 mod music_gen;
 mod past_key_values;
