@@ -1,20 +1,21 @@
-use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use std::fmt::{Debug, Write};
 use std::path::Path;
 use std::sync::Arc;
 
+use indicatif::{ProgressBar, ProgressState, ProgressStyle};
+use ndarray::Array;
+use num_traits::Zero;
 use ort::{
     CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
-    GraphOptimizationLevel, TensorRTExecutionProvider,
+    TensorRTExecutionProvider,
 };
 use tokenizers::Tokenizer;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::delay_pattern_mask_ids::DelayedPatternMaskIds;
-use crate::logits::Logits;
-use crate::past_key_values::{PastKeyValues, PastKeyValuesConfig};
-use crate::session_input_builder::SessionInputsBuilder;
+use crate::music_gen_inputs::MusicGenInputs;
+use crate::music_gen_outputs::MusicGenOutputs;
 use crate::tensor::Tensor;
 
 // TODO: this are hardcoded now, maybe they are in one of the config.json files?
@@ -27,14 +28,12 @@ const ENCODER_DIM_KV: usize = 64;
 const DECODER_DIM_KV: usize = 64;
 const GUIDANCE_SCALE: usize = 3;
 const TOP_K: usize = 50;
-const MAX_LEN: usize = 500;
+const MAX_LEN: usize = 1000;
 
 async fn build_session<P: AsRef<Path> + Debug>(path: P) -> ort::Result<ort::Session> {
     println!("Loading {path:?}...");
     ort::Session::builder()?
-        .with_optimization_level(GraphOptimizationLevel::Level1)?
-        .with_optimization_level(GraphOptimizationLevel::Level2)?
-        .with_inter_threads(8)?
+        .with_intra_threads(8)?
         .with_execution_providers([
             // Prefer TensorRT over CUDA.
             TensorRTExecutionProvider::default().build(),
@@ -91,7 +90,7 @@ impl MusicGen {
         pb
     }
 
-    pub fn generate(&self, text: &str) -> ort::Result<UnboundedReceiver<[i64; 4]>> {
+    pub fn generate(&self, text: &str) -> ort::Result<UnboundedReceiver<ort::Result<[i64; 4]>>> {
         println!("Tokenizing...");
         let tokens = self
             .tokenizer
@@ -107,12 +106,9 @@ impl MusicGen {
         let attention_mask = Tensor::<i64>::ones((1, tokens_len));
 
         println!("Tokenization finished, encoding text...");
-        let mut output = self.text_encoder.run(
-            SessionInputsBuilder::start()
-                .add(input_ids.into_inner())
-                .add(attention_mask.view())
-                .end(),
-        )?;
+        let mut output = self
+            .text_encoder
+            .run(ort::inputs![input_ids.into_inner(), attention_mask.view()]?)?;
 
         let last_hidden_state: Tensor<f32> = output
             .remove("last_hidden_state")
@@ -125,91 +121,84 @@ impl MusicGen {
         let encoder_attention_mask = attention_mask.dupe_zeros_along_first_dim();
 
         let mut delay_pattern_mask_ids = DelayedPatternMaskIds::<4>::new();
-        let mut past_key_values = PastKeyValues::empty(PastKeyValuesConfig {
-            num_encoder_heads: NUM_ENCODER_HEADS,
-            num_decoder_heads: NUM_DECODER_HEADS,
-            encoder_dim_kv: ENCODER_DIM_KV,
-            decoder_dim_kv: DECODER_DIM_KV,
-            num_decoder_layers: NUM_DECODER_LAYERS,
-        });
 
-        let (tx, rx) = mpsc::unbounded_channel::<[i64; 4]>();
+        let (tx, rx) = mpsc::unbounded_channel::<ort::Result<[i64; 4]>>();
+
         let decoder_model_merged = self.decoder_model_merged.clone();
+        let tx2 = tx.clone();
 
-        println!("Text encoded, generating...");
-        tokio::spawn(async move {
+        let future = async move {
+            let mut inputs = MusicGenInputs::new();
+            inputs.encoder_attention_mask(encoder_attention_mask.into_inner())?;
+            inputs.input_ids(ort::Tensor::from_array(([8, 1], vec![PAD_TOKEN_ID; 8]))?)?;
+            inputs.encoder_hidden_states(encoder_hidden_states.into_inner())?;
+
+            let decoder_dims = &[1, NUM_DECODER_HEADS, 0, DECODER_DIM_KV];
+            let encoder_dims = &[1, NUM_ENCODER_HEADS, 0, ENCODER_DIM_KV];
+            for i in 0..NUM_DECODER_LAYERS {
+                inputs.past_key_value_decoder_key(i, zeros_tensor::<f32>(decoder_dims))?;
+                inputs.past_key_value_decoder_value(i, zeros_tensor::<f32>(decoder_dims))?;
+                inputs.past_key_value_encoder_key(i, zeros_tensor::<f32>(encoder_dims))?;
+                inputs.past_key_value_encoder_value(i, zeros_tensor::<f32>(encoder_dims))?;
+            }
+            inputs.use_cache_branch(false);
             let bar = Self::make_bar();
             for i in 0..MAX_LEN {
-                bar.set_position(i as u64);
-                let prepared_input_ids = Tensor::from_shape_vec(
-                    (4, 1),
-                    delay_pattern_mask_ids
-                        .last_delayed_masked(PAD_TOKEN_ID)
-                        .to_vec(),
-                )
-                .dupe_along_first_dim();
+                if i > 0 {
+                    bar.set_position(i as u64);
+                }
 
-                let has_past_key_values = !past_key_values.is_empty();
+                let outputs = decoder_model_merged.run(inputs.ort())?;
+                let mut outputs = MusicGenOutputs::new(outputs);
 
-                let outputs = decoder_model_merged
-                    .run(
-                        SessionInputsBuilder::start()
-                            .add(encoder_attention_mask.view())
-                            .add(prepared_input_ids.into_inner())
-                            .add(encoder_hidden_states.view())
-                            .add_many(past_key_values.view_all())
-                            .add(Tensor::bool(has_past_key_values).into_inner())
-                            .end(),
-                    )
-                    .expect("Error running inference on decoder_model_merged");
+                delay_pattern_mask_ids.push(
+                    outputs
+                        .take_logits()?
+                        .apply_free_guidance(GUIDANCE_SCALE)
+                        .sample(TOP_K)
+                        .iter()
+                        .map(|e| e.0),
+                );
 
-                // logits: float32[batch_size,decoder_sequence_length,2048]
-                let logits = Logits::from_3d_dyn_value(&outputs[0])
-                    .expect("Error extracting logits from onnx runtime value");
-                let logits = logits.apply_free_guidance(GUIDANCE_SCALE);
-
-                delay_pattern_mask_ids.push(logits.sample(TOP_K).iter().map(|e| e.0));
+                let [a, b, c, d] = delay_pattern_mask_ids.last_delayed_masked(PAD_TOKEN_ID);
+                inputs.input_ids(ort::Tensor::from_array((
+                    [8, 1],
+                    vec![a, b, c, d, a, b, c, d],
+                ))?)?;
 
                 if let Some(last_de_delayed) = delay_pattern_mask_ids.last_de_delayed() {
-                    let sent = tx.send(last_de_delayed);
+                    let sent = tx.send(Ok(last_de_delayed));
                     if sent.is_err() {
                         break;
                     }
                 }
 
-                // `outputs` is:
-                // [
-                //   logits,
-                //   past_key_values.0.decoder.key,
-                //   past_key_values.0.decoder.value,
-                //   past_key_values.0.encoder.key,
-                //   past_key_values.0.encoder.value,
-                //   ...,
-                //   past_key_values.n.decoder.key,
-                //   past_key_values.n.decoder.value,
-                //   past_key_values.n.encoder.key,
-                //   past_key_values.n.encoder.value
-                // ]
-                for i in 0..(outputs.len() - 1) / 4 {
-                    let idx = (i * 4) + 1;
-                    if has_past_key_values {
+                for j in 0..NUM_DECODER_LAYERS {
+                    let v = outputs.take_present_decoder_key(j);
+                    inputs.past_key_value_decoder_key(j, v)?;
+                    let v = outputs.take_present_decoder_value(j);
+                    inputs.past_key_value_decoder_value(j, v)?;
+                    if !inputs.use_cache_branch {
                         // Optimization introduced by optimum to reuse past key values. So, we just replace the constant
                         // outputs with the previous past key values.
                         // https://github.com/huggingface/optimum/blob/0bf2c05fb7e1182b52d21b703cfc95fd9e4ea3dc/optimum/onnxruntime/base.py#L677-L704
-                        // TODO: too many unwraps
-                        past_key_values.set(i, 0, Tensor::try_from(&outputs[idx]).unwrap());
-                        past_key_values.set(i, 1, Tensor::try_from(&outputs[idx + 1]).unwrap());
-                        // past_key_values.set(i, 2, Tensor::try_from(&outputs[idx + 2])?); optimization consist on omitting the replacement of the "encoder" key-values
-                        // past_key_values.set(i, 3, Tensor::try_from(&outputs[idx + 3])?);
-                    } else {
-                        past_key_values.set(i, 0, Tensor::try_from(&outputs[idx]).unwrap());
-                        past_key_values.set(i, 1, Tensor::try_from(&outputs[idx + 1]).unwrap());
-                        past_key_values.set(i, 2, Tensor::try_from(&outputs[idx + 2]).unwrap());
-                        past_key_values.set(i, 3, Tensor::try_from(&outputs[idx + 3]).unwrap());
+                        let v = outputs.take_present_encoder_key(j);
+                        inputs.past_key_value_encoder_key(j, v)?;
+                        let v = outputs.take_present_encoder_value(j);
+                        inputs.past_key_value_encoder_value(j, v)?;
                     }
                 }
+
+                inputs.use_cache_branch(true);
             }
-            bar.finish_with_message("done")
+            bar.finish_with_message("done");
+            Ok::<(), ort::Error>(())
+        };
+
+        tokio::spawn(async move {
+            if let Err(err) = future.await {
+                let _ = tx2.send(Err(err));
+            };
         });
 
         Ok(rx)
@@ -237,4 +226,10 @@ impl MusicGen {
         let result = result.squeeze(0).squeeze(0).into_inner().into_raw_vec();
         Ok(result)
     }
+}
+
+fn zeros_tensor<T: ort::IntoTensorElementType + Debug + Clone + Zero + 'static>(
+    shape: &[usize],
+) -> ort::Tensor<T> {
+    ort::Value::from_array(Array::<T, _>::zeros(shape)).expect("Could not build zeros tensor")
 }

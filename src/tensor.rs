@@ -164,4 +164,14 @@ impl<T: TensorData + Zero> Tensor<T> {
             .unwrap(),
         )
     }
+
+    pub fn dupe_zeros_along_dim(&self, dim: usize) -> Self {
+        Tensor::from_array(
+            concatenate(
+                Axis(dim),
+                &[self.0.view(), Array::zeros(self.0.shape()).view()],
+            )
+            .unwrap(),
+        )
+    }
 }
