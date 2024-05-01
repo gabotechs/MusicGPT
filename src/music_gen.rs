@@ -21,7 +21,6 @@ use crate::music_gen_outputs::MusicGenOutputs;
 const PAD_TOKEN_ID: i64 = 2048;
 const NUM_ENCODER_HEADS: usize = 16;
 const NUM_DECODER_HEADS: usize = 16;
-const NUM_ENCODER_LAYERS: usize = 24;
 const NUM_DECODER_LAYERS: usize = 24;
 const ENCODER_DIM_KV: usize = 64;
 const DECODER_DIM_KV: usize = 64;
@@ -49,7 +48,6 @@ pub struct MusicGen {
     tokenizer: Tokenizer,
     text_encoder: ort::Session,
     decoder_model_merged: Arc<ort::Session>,
-    delay_pattern_mask: ort::Session,
     audio_encodec_decode: ort::Session,
 }
 
@@ -62,15 +60,13 @@ impl MusicGen {
         let result = tokio::join!(
             build_session("onnx/text_encoder.onnx"),
             build_session("onnx/decoder_model_merged.onnx"),
-            build_session("onnx/build_delay_pattern_mask.onnx"),
             build_session("onnx/encodec_decode.onnx")
         );
         Ok(Self {
             tokenizer,
             text_encoder: result.0?,
             decoder_model_merged: Arc::new(result.1?),
-            delay_pattern_mask: result.2?,
-            audio_encodec_decode: result.3?,
+            audio_encodec_decode: result.2?,
         })
     }
 

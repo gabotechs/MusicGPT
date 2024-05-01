@@ -30,11 +30,11 @@ impl<const N: usize> DelayedPatternMaskIds<N> {
         // 3 P P P x x x x x x x ...
         let seq_len = self.batches[0].len();
         let mut result = [0; N];
-        for i in 0..N {
+        for (i, item) in result.iter_mut().enumerate() {
             if (seq_len as i64 - i as i64) <= 0 {
-                result[i] = pad_token_id
+                *item = pad_token_id
             } else {
-                result[i] = *self.batches[i].last().expect("There are no input_ids");
+                *item = *self.batches[i].last().expect("There are no input_ids");
             }
         }
         result
@@ -52,8 +52,8 @@ impl<const N: usize> DelayedPatternMaskIds<N> {
             return None;
         }
         let mut result = [0; N];
-        for i in 0..N {
-            result[i] = self.batches[i][self.batches[i].len() - N + i]
+        for (i, item) in result.iter_mut().enumerate() {
+            *item = self.batches[i][self.batches[i].len() - N + i]
         }
         Some(result)
     }

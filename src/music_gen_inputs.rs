@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::hint::black_box;
 
 pub struct MusicGenInputs {
     inputs: HashMap<String, ort::DynValue>,
