@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use ndarray::Array;
-use num_traits::Zero;
+use num_traits::{One, Zero};
 use ort::{
     CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
     TensorRTExecutionProvider,
@@ -16,7 +16,6 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use crate::delay_pattern_mask_ids::DelayedPatternMaskIds;
 use crate::music_gen_inputs::MusicGenInputs;
 use crate::music_gen_outputs::MusicGenOutputs;
-use crate::tensor::Tensor;
 
 // TODO: this are hardcoded now, maybe they are in one of the config.json files?
 const PAD_TOKEN_ID: i64 = 2048;
@@ -28,7 +27,7 @@ const ENCODER_DIM_KV: usize = 64;
 const DECODER_DIM_KV: usize = 64;
 const GUIDANCE_SCALE: usize = 3;
 const TOP_K: usize = 50;
-const MAX_LEN: usize = 1000;
+const MAX_LEN: usize = 100;
 
 async fn build_session<P: AsRef<Path> + Debug>(path: P) -> ort::Result<ort::Session> {
     println!("Loading {path:?}...");
@@ -102,23 +101,24 @@ impl MusicGen {
             .collect::<Vec<_>>();
 
         let tokens_len = tokens.len();
-        let input_ids = Tensor::from_shape_vec((1, tokens_len), tokens);
-        let attention_mask = Tensor::<i64>::ones((1, tokens_len));
+        let input_ids = ort::Tensor::from_array(([1, tokens_len], tokens))?;
+        let attention_mask = ones_tensor::<i64>(&[1, tokens_len]);
 
         println!("Tokenization finished, encoding text...");
         let mut output = self
             .text_encoder
-            .run(ort::inputs![input_ids.into_inner(), attention_mask.view()]?)?;
+            .run(ort::inputs![input_ids, attention_mask]?)?;
 
-        let last_hidden_state: Tensor<f32> = output
+        let last_hidden_state = output
             .remove("last_hidden_state")
-            .expect("last_hidden_state not found in output")
-            .try_into()?;
+            .expect("last_hidden_state not found in output");
 
         // Apparently, there's a setting in huggingface's transformers that says that
         // if `guidance_scale` > 1 then you should concatenate 0 along the first axis.
-        let encoder_hidden_states = last_hidden_state.dupe_zeros_along_first_dim();
-        let encoder_attention_mask = attention_mask.dupe_zeros_along_first_dim();
+        let encoder_hidden_states =
+            dupe_zeros_along_first_dim::<f32>(last_hidden_state.downcast()?)?;
+        let encoder_attention_mask =
+            dupe_zeros_along_first_dim::<i64>(ones_tensor(&[1, tokens_len]))?;
 
         let mut delay_pattern_mask_ids = DelayedPatternMaskIds::<4>::new();
 
@@ -127,11 +127,12 @@ impl MusicGen {
         let decoder_model_merged = self.decoder_model_merged.clone();
         let tx2 = tx.clone();
 
+        let mut inputs = MusicGenInputs::new();
+        inputs.encoder_attention_mask(encoder_attention_mask)?;
+        inputs.encoder_hidden_states(encoder_hidden_states)?;
+
         let future = async move {
-            let mut inputs = MusicGenInputs::new();
-            inputs.encoder_attention_mask(encoder_attention_mask.into_inner())?;
             inputs.input_ids(ort::Tensor::from_array(([8, 1], vec![PAD_TOKEN_ID; 8]))?)?;
-            inputs.encoder_hidden_states(encoder_hidden_states.into_inner())?;
 
             let decoder_dims = &[1, NUM_DECODER_HEADS, 0, DECODER_DIM_KV];
             let encoder_dims = &[1, NUM_ENCODER_HEADS, 0, ENCODER_DIM_KV];
@@ -212,19 +213,16 @@ impl MusicGen {
                 data.push(n)
             }
         }
-        let tensor = Tensor::from_shape_vec((1, 1, 4, seq_len), data);
+        let tensor = ort::Tensor::from_array(([1, 1, 4, seq_len], data))?;
 
-        let mut outputs = self
-            .audio_encodec_decode
-            .run(ort::inputs![tensor.into_inner()]?)?;
+        let mut outputs = self.audio_encodec_decode.run(ort::inputs![tensor]?)?;
 
-        let result: Tensor<f32> = outputs
+        let audio_values = outputs
             .remove("audio_values")
-            .expect("audio_values not found in output")
-            .try_into()?;
+            .expect("audio_values not found in output");
 
-        let result = result.squeeze(0).squeeze(0).into_inner().into_raw_vec();
-        Ok(result)
+        let (_, data) = audio_values.try_extract_raw_tensor()?;
+        Ok(data.to_vec())
     }
 }
 
@@ -232,4 +230,19 @@ fn zeros_tensor<T: ort::IntoTensorElementType + Debug + Clone + Zero + 'static>(
     shape: &[usize],
 ) -> ort::Tensor<T> {
     ort::Value::from_array(Array::<T, _>::zeros(shape)).expect("Could not build zeros tensor")
+}
+
+fn ones_tensor<T: ort::IntoTensorElementType + Debug + Clone + One + 'static>(
+    shape: &[usize],
+) -> ort::Tensor<T> {
+    ort::Value::from_array(Array::<T, _>::ones(shape)).expect("Could not build zeros tensor")
+}
+
+fn dupe_zeros_along_first_dim<T: ort::IntoTensorElementType + Debug + Zero + Clone + 'static>(
+    tensor: ort::Tensor<T>,
+) -> ort::Result<ort::Tensor<T>> {
+    let (mut shape, data) = tensor.try_extract_raw_tensor()?;
+    shape[0] *= 2;
+    let data = [data.to_vec(), vec![T::zero(); data.len()]].concat();
+    ort::Tensor::from_array((shape, data))
 }

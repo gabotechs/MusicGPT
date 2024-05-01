@@ -11,10 +11,6 @@ impl<const N: usize> DelayedPatternMaskIds<N> {
         }
     }
 
-    pub fn dims(&self) -> (usize, usize) {
-        (N, self.batches[0].len())
-    }
-
     pub fn push(&mut self, token_ids: impl IntoIterator<Item = i64>) {
         let mut i = 0;
         for token_id in token_ids.into_iter() {
@@ -97,29 +93,5 @@ mod tests {
         assert_eq!(input_ids.last_de_delayed(), Some([1, 6, 11, 16]));
         input_ids.push([17, 18, 19, 20]);
         assert_eq!(input_ids.last_de_delayed(), Some([5, 10, 15, 20]));
-    }
-
-    #[test]
-    fn index() {
-        let mut input_ids = DelayedPatternMaskIds::<4>::new();
-        input_ids.push([1, 2, 3, 4]);
-        input_ids.push([5, 6, 7, 8]);
-        input_ids.push([9, 10, 11, 12]);
-        // 2D indexing
-        assert_eq!(input_ids[(1, 2)], 10);
-
-        // 1D indexing
-        assert_eq!(input_ids[0], 1);
-        assert_eq!(input_ids[1], 5);
-        assert_eq!(input_ids[2], 9);
-        assert_eq!(input_ids[3], 2);
-        assert_eq!(input_ids[4], 6);
-        assert_eq!(input_ids[5], 10);
-        assert_eq!(input_ids[6], 3);
-        assert_eq!(input_ids[7], 7);
-        assert_eq!(input_ids[8], 11);
-        assert_eq!(input_ids[9], 4);
-        assert_eq!(input_ids[10], 8);
-        assert_eq!(input_ids[11], 12);
     }
 }

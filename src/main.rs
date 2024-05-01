@@ -7,7 +7,6 @@ mod logits;
 mod music_gen;
 mod music_gen_inputs;
 mod music_gen_outputs;
-mod tensor;
 
 const SAMPLING_RATE: u32 = 32000;
 
