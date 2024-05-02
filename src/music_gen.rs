@@ -1,8 +1,7 @@
-use std::fmt::{Debug, Write};
-use std::path::Path;
+use std::fmt::Debug;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use indicatif::{ProgressBar, ProgressState, ProgressStyle};
 use ndarray::{Array, Axis};
 use num_traits::{One, Zero};
 use ort::{
@@ -30,7 +29,6 @@ const TOP_K: usize = 50;
 const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
 
 async fn build_session<P: AsRef<Path> + Debug>(path: P) -> ort::Result<ort::Session> {
-    println!("Loading {path:?}...");
     ort::Session::builder()?
         .with_intra_threads(4)?
         .with_execution_providers([
@@ -52,16 +50,22 @@ pub struct MusicGen {
     audio_encodec_decode: ort::Session,
 }
 
+pub struct MusicGenLoadOptions {
+    pub(crate) tokenizer: PathBuf,
+    pub(crate) text_encoder: PathBuf,
+    pub(crate) decoder_model_merged: PathBuf,
+    pub(crate) audio_encodec_decode: PathBuf,
+}
+
 impl MusicGen {
-    pub async fn load() -> ort::Result<Self> {
-        println!("Loading tokenizer...");
-        let mut tokenizer = Tokenizer::from_file("onnx/tokenizer.json")?;
+    pub async fn load(opts: MusicGenLoadOptions) -> ort::Result<Self> {
+        let mut tokenizer = Tokenizer::from_file(opts.tokenizer)?;
         tokenizer.with_padding(None).with_truncation(None)?;
 
         let result = tokio::join!(
-            build_session("onnx/text_encoder.onnx"),
-            build_session("onnx/decoder_model_merged.onnx"),
-            build_session("onnx/encodec_decode.onnx")
+            build_session(opts.text_encoder),
+            build_session(opts.decoder_model_merged),
+            build_session(opts.audio_encodec_decode)
         );
         Ok(Self {
             tokenizer,
@@ -71,28 +75,11 @@ impl MusicGen {
         })
     }
 
-    fn make_bar(len: usize) -> ProgressBar {
-        let pb = ProgressBar::new(len as u64);
-        pb.set_style(
-            ProgressStyle::with_template(
-                "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] ({eta})",
-            )
-            .unwrap()
-            .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
-                write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
-            })
-            .progress_chars("#>-"),
-        );
-        pb
-    }
-
     fn generate_tokens(
         &self,
         text: &str,
-        secs: usize,
+        max_len: usize,
     ) -> ort::Result<UnboundedReceiver<ort::Result<[i64; 4]>>> {
-        let max_len = secs * INPUT_IDS_BATCH_PER_SECOND;
-        println!("Tokenizing...");
         let tokens = self
             .tokenizer
             .encode(text, true)
@@ -106,7 +93,6 @@ impl MusicGen {
         let input_ids = ort::Tensor::from_array(([1, tokens_len], tokens))?;
         let attention_mask = ones_tensor::<i64>(&[1, tokens_len]);
 
-        println!("Tokenization finished, encoding text...");
         let mut output = self
             .text_encoder
             .run(ort::inputs![input_ids, attention_mask]?)?;
@@ -145,12 +131,7 @@ impl MusicGen {
                 inputs.past_key_value_encoder_value(i, zeros_tensor::<f32>(encoder_dims))?;
             }
             inputs.use_cache_branch(false);
-            let bar = Self::make_bar(max_len);
-            for i in 0..max_len {
-                if i > 1 {
-                    bar.set_position(i as u64);
-                }
-
+            for _ in 0..max_len {
                 let outputs = decoder_model_merged.run(inputs.ort())?;
                 let mut outputs = MusicGenOutputs::new(outputs);
 
@@ -194,7 +175,6 @@ impl MusicGen {
 
                 inputs.use_cache_branch(true);
             }
-            bar.finish_with_message("done");
             Ok::<(), ort::Error>(())
         };
 
@@ -207,19 +187,24 @@ impl MusicGen {
         Ok(rx)
     }
 
-    pub async fn generate(
+    pub async fn generate<Cb: Fn(usize, usize)>(
         &self,
         text: &str,
         secs: usize,
+        cb: Cb,
     ) -> ort::Result<impl IntoIterator<Item = f32>> {
-        let mut generator = self.generate_tokens(text, secs)?;
+        let max_len = secs * INPUT_IDS_BATCH_PER_SECOND;
+        let mut generator = self.generate_tokens(text, max_len)?;
 
         let mut data = vec![];
+        let mut count = 0;
         while let Some(ids) = generator.recv().await {
             let ids = match ids {
                 Ok(ids) => ids,
                 Err(err) => return Err(err),
             };
+            count += 1;
+            cb(count, max_len);
             for id in ids {
                 data.push(id)
             }

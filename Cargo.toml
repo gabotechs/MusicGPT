@@ -16,3 +16,6 @@ rand = "0.8.5"
 hound = "3.5.1"
 tokio = { version = "1.37.0", features = ["full"] }
 indicatif = "0.17.8"
+directories = "5.0"
+reqwest = { version = "0.12.4", features = ["stream"] }
+futures-util = "0.3.30"
