@@ -218,7 +218,7 @@ impl MusicGen {
             }
         }
         let seq_len = data.len() / 4;
-        let arr = Array::from_shape_vec((seq_len, 4), data).expect(""); // TODO
+        let arr = Array::from_shape_vec((seq_len, 4), data).expect("Programming error");
         let arr = arr.t().insert_axis(Axis(0)).insert_axis(Axis(0));
 
         let mut outputs = self.audio_encodec_decode.run(ort::inputs![arr]?)?;
