@@ -60,6 +60,7 @@ impl Config {
         let total_bytes = resp.content_length().unwrap_or_default() as usize;
 
         let _ = fs::create_dir_all(data_dir).await;
+        // TODO: download to a temp file, and then mv to the real one.
         let mut file = fs::File::create(abs_file_path.clone()).await?;
         let mut stream = resp.bytes_stream();
 

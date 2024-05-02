@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -13,18 +14,12 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::delay_pattern_mask_ids::DelayedPatternMaskIds;
+use crate::music_gen_config::MusicGenConfig;
 use crate::music_gen_inputs::MusicGenInputs;
 use crate::music_gen_outputs::MusicGenOutputs;
 
-// TODO: this are hardcoded now, maybe they are in one of the config.json files?
-const PAD_TOKEN_ID: i64 = 2048;
-const NUM_ENCODER_HEADS: usize = 16;
-const NUM_DECODER_HEADS: usize = 16;
-const NUM_DECODER_LAYERS: usize = 24;
-const ENCODER_DIM_KV: usize = 64;
-const DECODER_DIM_KV: usize = 64;
+// TODO: is this configurable?
 const GUIDANCE_SCALE: usize = 3;
-const TOP_K: usize = 50;
 // I calculated this myself.
 const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
 
@@ -48,13 +43,15 @@ pub struct MusicGen {
     text_encoder: ort::Session,
     decoder_model_merged: Arc<ort::Session>,
     audio_encodec_decode: ort::Session,
+    config: MusicGenConfig,
 }
 
 pub struct MusicGenLoadOptions {
-    pub(crate) tokenizer: PathBuf,
-    pub(crate) text_encoder: PathBuf,
-    pub(crate) decoder_model_merged: PathBuf,
-    pub(crate) audio_encodec_decode: PathBuf,
+    pub tokenizer: PathBuf,
+    pub text_encoder: PathBuf,
+    pub decoder_model_merged: PathBuf,
+    pub audio_encodec_decode: PathBuf,
+    pub config: PathBuf,
 }
 
 impl MusicGen {
@@ -62,16 +59,21 @@ impl MusicGen {
         let mut tokenizer = Tokenizer::from_file(opts.tokenizer)?;
         tokenizer.with_padding(None).with_truncation(None)?;
 
+        let config = fs::read_to_string(opts.config).expect("Error reading config file from disk");
+        let config = serde_json::from_str(&config).expect("Could not deserialize config file");
+
         let result = tokio::join!(
             build_session(opts.text_encoder),
             build_session(opts.decoder_model_merged),
             build_session(opts.audio_encodec_decode)
         );
+
         Ok(Self {
             tokenizer,
             text_encoder: result.0?,
             decoder_model_merged: Arc::new(result.1?),
             audio_encodec_decode: result.2?,
+            config,
         })
     }
 
@@ -119,16 +121,22 @@ impl MusicGen {
         inputs.encoder_attention_mask(encoder_attention_mask)?;
         inputs.encoder_hidden_states(encoder_hidden_states)?;
 
-        let future = async move {
-            inputs.input_ids(ort::Tensor::from_array(([8, 1], vec![PAD_TOKEN_ID; 8]))?)?;
+        let num_hidden_layers = self.config.decoder.num_hidden_layers;
+        let num_attention_heads = self.config.decoder.num_attention_heads;
+        let pad_token_id = self.config.decoder.pad_token_id;
+        let d_kv = self.config.text_encoder.d_kv;
+        let top_k = self.config.decoder.top_k;
+        let decoder_dims = [1, num_attention_heads, 0, d_kv];
+        let encoder_dims = [1, num_attention_heads, 0, d_kv];
 
-            let decoder_dims = &[1, NUM_DECODER_HEADS, 0, DECODER_DIM_KV];
-            let encoder_dims = &[1, NUM_ENCODER_HEADS, 0, ENCODER_DIM_KV];
-            for i in 0..NUM_DECODER_LAYERS {
-                inputs.past_key_value_decoder_key(i, zeros_tensor::<f32>(decoder_dims))?;
-                inputs.past_key_value_decoder_value(i, zeros_tensor::<f32>(decoder_dims))?;
-                inputs.past_key_value_encoder_key(i, zeros_tensor::<f32>(encoder_dims))?;
-                inputs.past_key_value_encoder_value(i, zeros_tensor::<f32>(encoder_dims))?;
+        let future = async move {
+            inputs.input_ids(ort::Tensor::from_array(([8, 1], vec![pad_token_id; 8]))?)?;
+
+            for i in 0..num_hidden_layers {
+                inputs.past_key_value_decoder_key(i, zeros_tensor::<f32>(&decoder_dims))?;
+                inputs.past_key_value_decoder_value(i, zeros_tensor::<f32>(&decoder_dims))?;
+                inputs.past_key_value_encoder_key(i, zeros_tensor::<f32>(&encoder_dims))?;
+                inputs.past_key_value_encoder_value(i, zeros_tensor::<f32>(&encoder_dims))?;
             }
             inputs.use_cache_branch(false);
             for _ in 0..max_len {
@@ -139,12 +147,12 @@ impl MusicGen {
                     outputs
                         .take_logits()?
                         .apply_free_guidance(GUIDANCE_SCALE)
-                        .sample(TOP_K)
+                        .sample(top_k)
                         .iter()
                         .map(|e| e.0),
                 );
 
-                let [a, b, c, d] = delay_pattern_mask_ids.last_delayed_masked(PAD_TOKEN_ID);
+                let [a, b, c, d] = delay_pattern_mask_ids.last_delayed_masked(pad_token_id);
                 inputs.input_ids(ort::Tensor::from_array((
                     [8, 1],
                     vec![a, b, c, d, a, b, c, d],
@@ -157,7 +165,7 @@ impl MusicGen {
                     }
                 }
 
-                for j in 0..NUM_DECODER_LAYERS {
+                for j in 0..num_hidden_layers {
                     let v = outputs.take_present_decoder_key(j);
                     inputs.past_key_value_decoder_key(j, v)?;
                     let v = outputs.take_present_decoder_value(j);
@@ -210,7 +218,7 @@ impl MusicGen {
             }
         }
         let seq_len = data.len() / 4;
-        let arr = Array::from_shape_vec((seq_len, 4), data).expect("");
+        let arr = Array::from_shape_vec((seq_len, 4), data).expect(""); // TODO
         let arr = arr.t().insert_axis(Axis(0)).insert_axis(Axis(0));
 
         let mut outputs = self.audio_encodec_decode.run(ort::inputs![arr]?)?;

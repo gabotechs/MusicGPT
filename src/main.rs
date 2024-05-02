@@ -12,14 +12,19 @@ mod config;
 mod delay_pattern_mask_ids;
 mod logits;
 mod music_gen;
+mod music_gen_config;
 mod music_gen_inputs;
 mod music_gen_outputs;
 
 const SAMPLING_RATE: u32 = 32000;
+
+const CONFIG_SMALL: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_small/config.json?download=true";
 const TOKENIZER_JSON_SMALL: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_small/tokenizer.json?download=true";
 const TEXT_ENCODER_SMALL: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_small/text_encoder.onnx?download=true";
 const DECODER_SMALL: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_small/decoder_model_merged.onnx?download=true";
 const ENCODEC_DECODE_SMALL: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_small/encodec_decode.onnx?download=true";
+
+const CONFIG_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/config.json?download=true";
 const TOKENIZER_JSON_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/tokenizer.json?download=true";
 const TEXT_ENCODER_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/text_encoder.onnx?download=true";
 const DECODER_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/decoder_model_merged.onnx?download=true";
@@ -57,12 +62,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let remote_file_spec = match args.model {
         Model::Small => vec![
+            (CONFIG_SMALL, "small/config.json"),
             (TOKENIZER_JSON_SMALL, "small/tokenizer_json.json"),
             (TEXT_ENCODER_SMALL, "small/text_encoder.onnx"),
             (DECODER_SMALL, "small/decoder_model_merged.onnx"),
             (ENCODEC_DECODE_SMALL, "small/encodec_decode.onnx"),
         ],
         Model::Medium => vec![
+            (CONFIG_MEDIUM, "medium/config.json"),
             (TOKENIZER_JSON_MEDIUM, "medium/tokenizer_json.json"),
             (TEXT_ENCODER_MEDIUM, "medium/text_encoder.onnx"),
             (DECODER_MEDIUM, "medium/decoder_model_merged.onnx"),
@@ -103,6 +110,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let spinner = make_spinner("Loading models");
     let music_gen = MusicGen::load(MusicGenLoadOptions {
+        config: results.pop_front().unwrap(),
         tokenizer: results.pop_front().unwrap(),
         text_encoder: results.pop_front().unwrap(),
         decoder_model_merged: results.pop_front().unwrap(),
