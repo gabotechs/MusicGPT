@@ -11,7 +11,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new() -> Self {
+    fn new() -> Self {
         let dirs = ProjectDirs::from("com", "gabotechs", "music-gen")
             .expect("Could not load project directory");
 
@@ -29,16 +29,28 @@ impl Config {
     ///
     /// returns: Result<PathBuf, Error>
     pub async fn remote_data_file<Cb: Fn(usize, usize)>(
-        &self,
         url: &str,
-        file_name: &str,
+        relative_file: &str,
+        force: bool,
         cbk: Cb,
     ) -> std::io::Result<PathBuf> {
-        let data_dir = self.dirs.data_dir();
-        let abs_file_path = data_dir.join(file_name);
-        if fs::try_exists(abs_file_path.clone()).await? {
-            return Ok(abs_file_path);
+        let cfg = Config::new();
+        let data_dir = cfg.dirs.data_dir();
+
+        let relative_file_elements = relative_file.split('/');
+        let mut _file = data_dir.to_path_buf();
+        for element in relative_file_elements {
+            _file = _file.join(element);
         }
+        if fs::try_exists(_file.clone()).await? && !force {
+            return Ok(_file);
+        }
+
+        let abs_file_path = _file.clone();
+        _file.pop();
+        let abs_file_dir = _file;
+
+        fs::create_dir_all(abs_file_dir).await?;
 
         let resp = reqwest::get(url).await.map_err(io_err)?;
         let status_code = resp.status();
@@ -91,22 +103,17 @@ mod tests {
 
     #[tokio::test]
     async fn downloads_remote_file() -> std::io::Result<()> {
-        let config = Config::new();
         let remote_file = "https://raw.githubusercontent.com/seanmonstar/reqwest/master/README.md";
-        let file_name = rand_string() + ".txt";
+        let file_name = "foo/".to_string() + &rand_string() + ".txt";
 
         let time = SystemTime::now();
-        let file = config
-            .remote_data_file(remote_file, &file_name, |_, _| {})
-            .await?;
+        let file = Config::remote_data_file(remote_file, &file_name, false, |_, _| {}).await?;
         let download_elapsed = SystemTime::now().duration_since(time).unwrap().as_micros();
 
         assert!(fs::try_exists(file.clone()).await?);
 
         let time = SystemTime::now();
-        config
-            .remote_data_file(remote_file, &file_name, |_, _| {})
-            .await?;
+        Config::remote_data_file(remote_file, &file_name, false, |_, _| {}).await?;
         let cached_elapsed = SystemTime::now().duration_since(time).unwrap().as_micros();
 
         assert!(download_elapsed / cached_elapsed > 10);

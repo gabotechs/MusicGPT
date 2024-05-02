@@ -1,6 +1,7 @@
 use crate::config::Config;
 use clap::{Parser, ValueEnum};
 use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
+use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt::Write;
 use std::time::Duration;
@@ -22,6 +23,7 @@ const ENCODEC_DECODE_SMALL: &str = "https://huggingface.co/gabotechs/music_gen/r
 const TOKENIZER_JSON_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/tokenizer.json?download=true";
 const TEXT_ENCODER_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/text_encoder.onnx?download=true";
 const DECODER_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/decoder_model_merged.onnx?download=true";
+const DECODER_DATA_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/decoder_model_merged.onnx_data?download=true";
 const ENCODEC_DECODE_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/encodec_decode.onnx?download=true";
 
 #[derive(Clone, ValueEnum)]
@@ -41,64 +43,70 @@ struct Args {
 
     #[arg(long, default_value = "small")]
     model: Model,
+
+    #[arg(long, default_value = "")]
+    output: String,
+
+    #[arg(long, default_value = "false")]
+    force_download: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    let cfg = Config::new();
 
-    let models = match args.model {
-        Model::Small => (
-            (TOKENIZER_JSON_SMALL, "tokenizer_json_small.json"),
-            (TEXT_ENCODER_SMALL, "text_encoder_small.onnx"),
-            (DECODER_SMALL, "decoder_model_merged_small.onnx"),
-            (ENCODEC_DECODE_SMALL, "encodec_decode_small.onnx"),
-        ),
-        Model::Medium => (
-            (TOKENIZER_JSON_MEDIUM, "tokenizer_json_medium.json"),
-            (TEXT_ENCODER_MEDIUM, "text_encoder_medium.onnx"),
-            (DECODER_MEDIUM, "decoder_model_merged_medium.onnx"),
-            (ENCODEC_DECODE_MEDIUM, "encodec_decode_medium.onnx"),
-        ),
+    let remote_file_spec = match args.model {
+        Model::Small => vec![
+            (TOKENIZER_JSON_SMALL, "small/tokenizer_json.json"),
+            (TEXT_ENCODER_SMALL, "small/text_encoder.onnx"),
+            (DECODER_SMALL, "small/decoder_model_merged.onnx"),
+            (ENCODEC_DECODE_SMALL, "small/encodec_decode.onnx"),
+        ],
+        Model::Medium => vec![
+            (TOKENIZER_JSON_MEDIUM, "medium/tokenizer_json.json"),
+            (TEXT_ENCODER_MEDIUM, "medium/text_encoder.onnx"),
+            (DECODER_MEDIUM, "medium/decoder_model_merged.onnx"),
+            (ENCODEC_DECODE_MEDIUM, "medium/encodec_decode.onnx"),
+            // Files below will just be downloaded,
+            (DECODER_DATA_MEDIUM, "medium/decoder_model_merged.onnx_data"),
+        ],
         Model::Large => panic!("\"large\" model is not supported yet"),
     };
 
     let m = MultiProgress::new();
-    let pb1 = m.add(make_bar("tokenizer   ", 1));
-    let pb2 = m.insert_after(&pb1, make_bar("text_encoder", 1));
-    let pb3 = m.insert_after(&pb2, make_bar("decoder     ", 1));
-    let pb4 = m.insert_after(&pb3, make_bar("encodec     ", 1));
-    let result = tokio::try_join!(
-        cfg.remote_data_file(models.0 .0, models.0 .1, |elapsed, total| {
-            pb1.set_length(total as u64);
-            pb1.set_position(elapsed as u64);
-        }),
-        cfg.remote_data_file(models.1 .0, models.1 .1, |elapsed, total| {
-            pb2.set_length(total as u64);
-            pb2.set_position(elapsed as u64);
-        }),
-        cfg.remote_data_file(models.2 .0, models.2 .1, |elapsed, total| {
-            pb3.set_length(total as u64);
-            pb3.set_position(elapsed as u64);
-        }),
-        cfg.remote_data_file(models.3 .0, models.3 .1, |elapsed, total| {
-            pb4.set_length(total as u64);
-            pb4.set_position(elapsed as u64);
-        }),
-    )?;
-    pb1.finish_with_message("done");
-    pb2.finish_with_message("done");
-    pb3.finish_with_message("done");
-    pb4.finish_with_message("done");
+    let mut tasks = vec![];
+    let mut longest_name = 0;
+    for (_, local_filename) in remote_file_spec.iter() {
+        longest_name = longest_name.max(local_filename.len())
+    }
+
+    for (remote_file, local_filename) in remote_file_spec {
+        let bar = m.add(make_bar(
+            &format!("{local_filename: >width$}", width = longest_name),
+            1,
+        ));
+        tasks.push(tokio::spawn(Config::remote_data_file(
+            remote_file,
+            local_filename,
+            args.force_download,
+            move |elapsed, total| {
+                bar.set_length(total as u64);
+                bar.set_position(elapsed as u64);
+            },
+        )));
+    }
+    let mut results = VecDeque::new();
+    for task in tasks {
+        results.push_back(task.await??);
+    }
     m.clear()?;
 
     let spinner = make_spinner("Loading models");
     let music_gen = MusicGen::load(MusicGenLoadOptions {
-        tokenizer: result.0,
-        text_encoder: result.1,
-        decoder_model_merged: result.2,
-        audio_encodec_decode: result.3,
+        tokenizer: results.pop_front().unwrap(),
+        text_encoder: results.pop_front().unwrap(),
+        decoder_model_merged: results.pop_front().unwrap(),
+        audio_encodec_decode: results.pop_front().unwrap(),
     })
     .await?;
     spinner.finish_and_clear();
@@ -119,7 +127,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         bits_per_sample: 32,
         sample_format: hound::SampleFormat::Float,
     };
-    let mut writer = hound::WavWriter::create("out.wav", spec).unwrap();
+
+    let output = if args.output.is_empty() {
+        "music-gen.wav".to_string()
+    } else if !args.output.ends_with(".wav") {
+        args.output + ".wav"
+    } else {
+        args.output
+    };
+    let mut writer = hound::WavWriter::create(output, spec).unwrap();
     for sample in samples {
         writer.write_sample(sample).unwrap();
     }

@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 clap = { version = "4.5.4", features = ["derive"] }
 tokenizers = "0.19.1"
-ort = { version = "2.0.0-rc.2", features = ["coreml"] }
+ort = { version = "2.0.0-rc.2", features = ["coreml", "cuda", "winapi"] }
 ndarray = "0.15.6"
 num-traits = "0.2.18"
 log = "0.4.21"
