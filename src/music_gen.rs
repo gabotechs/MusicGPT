@@ -3,7 +3,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
-use ndarray::Array;
+use ndarray::{Array, Axis};
 use num_traits::{One, Zero};
 use ort::{
     CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
@@ -26,12 +26,13 @@ const ENCODER_DIM_KV: usize = 64;
 const DECODER_DIM_KV: usize = 64;
 const GUIDANCE_SCALE: usize = 3;
 const TOP_K: usize = 50;
-const MAX_LEN: usize = 100;
+// I calculated this myself.
+const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
 
 async fn build_session<P: AsRef<Path> + Debug>(path: P) -> ort::Result<ort::Session> {
     println!("Loading {path:?}...");
     ort::Session::builder()?
-        .with_intra_threads(8)?
+        .with_intra_threads(4)?
         .with_execution_providers([
             // Prefer TensorRT over CUDA.
             TensorRTExecutionProvider::default().build(),
@@ -70,11 +71,11 @@ impl MusicGen {
         })
     }
 
-    fn make_bar() -> ProgressBar {
-        let pb = ProgressBar::new(MAX_LEN as u64);
+    fn make_bar(len: usize) -> ProgressBar {
+        let pb = ProgressBar::new(len as u64);
         pb.set_style(
             ProgressStyle::with_template(
-                "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} ({eta})",
+                "{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] ({eta})",
             )
             .unwrap()
             .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
@@ -85,7 +86,12 @@ impl MusicGen {
         pb
     }
 
-    pub fn generate(&self, text: &str) -> ort::Result<UnboundedReceiver<ort::Result<[i64; 4]>>> {
+    fn generate_tokens(
+        &self,
+        text: &str,
+        secs: usize,
+    ) -> ort::Result<UnboundedReceiver<ort::Result<[i64; 4]>>> {
+        let max_len = secs * INPUT_IDS_BATCH_PER_SECOND;
         println!("Tokenizing...");
         let tokens = self
             .tokenizer
@@ -139,9 +145,9 @@ impl MusicGen {
                 inputs.past_key_value_encoder_value(i, zeros_tensor::<f32>(encoder_dims))?;
             }
             inputs.use_cache_branch(false);
-            let bar = Self::make_bar();
-            for i in 0..MAX_LEN {
-                if i > 0 {
+            let bar = Self::make_bar(max_len);
+            for i in 0..max_len {
+                if i > 1 {
                     bar.set_position(i as u64);
                 }
 
@@ -201,17 +207,28 @@ impl MusicGen {
         Ok(rx)
     }
 
-    pub fn encode_audio(&self, input_ids: [Vec<i64>; 4]) -> ort::Result<Vec<f32>> {
-        let seq_len = input_ids[0].len();
-        let mut data = Vec::with_capacity(seq_len * 4);
-        for batch in input_ids {
-            for n in batch {
-                data.push(n)
+    pub async fn generate(
+        &self,
+        text: &str,
+        secs: usize,
+    ) -> ort::Result<impl IntoIterator<Item = f32>> {
+        let mut generator = self.generate_tokens(text, secs)?;
+
+        let mut data = vec![];
+        while let Some(ids) = generator.recv().await {
+            let ids = match ids {
+                Ok(ids) => ids,
+                Err(err) => return Err(err),
+            };
+            for id in ids {
+                data.push(id)
             }
         }
-        let tensor = ort::Tensor::from_array(([1, 1, 4, seq_len], data))?;
+        let seq_len = data.len() / 4;
+        let arr = Array::from_shape_vec((seq_len, 4), data).expect("");
+        let arr = arr.t().insert_axis(Axis(0)).insert_axis(Axis(0));
 
-        let mut outputs = self.audio_encodec_decode.run(ort::inputs![tensor]?)?;
+        let mut outputs = self.audio_encodec_decode.run(ort::inputs![arr]?)?;
 
         let audio_values = outputs
             .remove("audio_values")
