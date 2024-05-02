@@ -35,23 +35,25 @@ impl Config {
         cbk: Cb,
     ) -> std::io::Result<PathBuf> {
         let cfg = Config::new();
-        let data_dir = cfg.dirs.data_dir();
+        let mut abs_file_dir = cfg.dirs.data_dir().to_path_buf();
 
-        let relative_file_elements = relative_file.split('/');
-        let mut _file = data_dir.to_path_buf();
+        // The provided `relative_path` might contain directories separated with /
+        let mut relative_file_elements = relative_file.split('/').collect::<Vec<_>>();
+        // so take the file name...
+        let file_name = relative_file_elements
+            .pop()
+            .expect("provided path was empty");
+        // ... and append the rest of the elements to the base directory.
         for element in relative_file_elements {
-            _file = _file.join(element);
+            abs_file_dir = abs_file_dir.join(element);
         }
-        if fs::try_exists(_file.clone()).await? && !force {
-            return Ok(_file);
+        let abs_file_path = abs_file_dir.join(file_name);
+        // At this point, the file might already exist on disk, so nothing else to do.
+        if fs::try_exists(abs_file_path.clone()).await? && !force {
+            return Ok(abs_file_path);
         }
 
-        let abs_file_path = _file.clone();
-        _file.pop();
-        let abs_file_dir = _file;
-
-        fs::create_dir_all(abs_file_dir).await?;
-
+        // If the file was not in disk, we need to download it.
         let resp = reqwest::get(url).await.map_err(io_err)?;
         let status_code = resp.status();
         if status_code != StatusCode::OK {
@@ -59,11 +61,13 @@ impl Config {
         }
         let total_bytes = resp.content_length().unwrap_or_default() as usize;
 
-        let _ = fs::create_dir_all(data_dir).await;
-        // TODO: download to a temp file, and then mv to the real one.
-        let mut file = fs::File::create(abs_file_path.clone()).await?;
-        let mut stream = resp.bytes_stream();
+        // The file will be first downloaded to a temporary file, to avoid corruptions.
+        fs::create_dir_all(abs_file_dir.clone()).await?;
+        let temp_abs_file_path = abs_file_dir.join(file_name.to_string() + ".temp");
+        let mut file = fs::File::create(temp_abs_file_path.clone()).await?;
 
+        // Stream the HTTP response to the file stream.
+        let mut stream = resp.bytes_stream();
         let mut downloaded_bytes = 0;
         while let Some(item) = stream.next().await {
             match item {
@@ -75,6 +79,10 @@ impl Config {
                 Err(err) => return Err(io_err(err)),
             }
         }
+
+        // If everything succeeded, we are fine to promote the newly stored temporary
+        // file to the actual destination.
+        fs::rename(temp_abs_file_path, abs_file_path.clone()).await?;
 
         Ok(abs_file_path)
     }
