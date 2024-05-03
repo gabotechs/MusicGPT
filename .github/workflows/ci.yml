@@ -1,4 +1,4 @@
-name: Test/Lint/Tag
+name: CI
 
 permissions:
   actions: read
@@ -62,7 +62,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+        # There's something funny happening with macos pipelines, they fail because of:
+        #  ld: library 'onnxruntime' not found
+      - if: ${{ !startsWith(matrix.os, 'macos') }}
+        uses: Swatinem/rust-cache@v2
       - if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: sudo apt install librust-alsa-sys-dev
       - uses: actions/cache@v3
