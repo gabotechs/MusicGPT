@@ -106,6 +106,7 @@ jobs:
 
       - uses: taiki-e/create-gh-release-action@v1
         with:
+          ref: refs/tags/v${{ steps.tag.outputs.version }}
           token: ${{ secrets.GITHUB_TOKEN }}
     outputs:
       version: ${{ steps.tag.outputs.version }}
@@ -142,4 +143,4 @@ jobs:
           target: ${{ matrix.target }}
           token: ${{ secrets.GITHUB_TOKEN }}
           build-tool: ${{ matrix.build-tool }}
-          ref: refs/tags/${{ needs.tag.outputs.version }}
+          ref: refs/tags/v${{ needs.tag.outputs.version }}
