@@ -53,8 +53,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
+            cache: '~/.config/musicgpt'
           - os: windows-latest
+            cache: 'C:\Users\runneradmin\AppData\Roaming\gabotechs\musicgpt'
           - os: macos-latest
+            cache: '~/Library/Application Support/com.gabotechs.musicgpt'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -62,18 +65,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: sudo apt install librust-alsa-sys-dev
-      - if: ${{ startsWith(matrix.os, 'ubuntu') }}
-        uses: actions/cache@v3
+      - uses: actions/cache@v3
         with:
-          path: '~/.config/musicgpt'
-      - if: ${{ startsWith(matrix.os, 'windows') }}
-        uses: actions/cache@v3
-        with:
-          path: 'C:\Users\runneradmin\AppData\Roaming\gabotechs\musicgpt'
-#      - if: ${{ startsWith(matrix.os, 'macos') }}
-#        uses: actions/cache@v3
-#        with:
-#          path: '~/Library/Application Support/com.gabotechs.musicgpt'
+          path: ${{ matrix.cache }}
+          key: ${{ matrix.os }}-data-dir
       - run: cargo run --release -- --prompt 'Create a LoFi song' --secs 1 --model small
 
   tag:
