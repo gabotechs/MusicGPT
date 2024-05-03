@@ -28,10 +28,21 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+        # https://github.com/Spotifyd/spotifyd/issues/659#issuecomment-737730954
       - run: sudo apt install librust-alsa-sys-dev
       - run: cargo clippy
 
-  test:
+  unit-test:
+    if: ${{ !startsWith(github.event.head_commit.message, 'ci:') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt install librust-alsa-sys-dev
+      - run: cargo test
+
+  smoke-test:
     if: ${{ !startsWith(github.event.head_commit.message, 'ci:') }}
     strategy:
       matrix:
@@ -41,16 +52,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-        # https://github.com/Spotifyd/spotifyd/issues/659#issuecomment-737730954
       - if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: sudo apt install librust-alsa-sys-dev
-      - run: cargo test
+      - run: cargo run --release -- --prompt 'Create a LoFi song' --secs 1 --model small
 
   tag:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu
     needs:
-      - test
+      - unit-test
+      - smoke-test
       - clippy
     steps:
       - uses: actions/checkout@v4
