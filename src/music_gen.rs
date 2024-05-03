@@ -10,8 +10,6 @@ use ort::{
     TensorRTExecutionProvider,
 };
 use tokenizers::Tokenizer;
-use tokio::sync::mpsc;
-use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::delay_pattern_mask_ids::DelayedPatternMaskIds;
 use crate::music_gen_config::MusicGenConfig;
@@ -81,7 +79,7 @@ impl MusicGen {
         &self,
         text: &str,
         max_len: usize,
-    ) -> ort::Result<UnboundedReceiver<ort::Result<[i64; 4]>>> {
+    ) -> ort::Result<tokio::sync::mpsc::Receiver<ort::Result<[i64; 4]>>> {
         let tokens = self
             .tokenizer
             .encode(text, true)
@@ -112,10 +110,7 @@ impl MusicGen {
 
         let mut delay_pattern_mask_ids = DelayedPatternMaskIds::<4>::new();
 
-        let (tx, rx) = mpsc::unbounded_channel::<ort::Result<[i64; 4]>>();
-
         let decoder_model_merged = self.decoder_model_merged.clone();
-        let tx2 = tx.clone();
 
         let mut inputs = MusicGenInputs::new();
         inputs.encoder_attention_mask(encoder_attention_mask)?;
@@ -129,6 +124,9 @@ impl MusicGen {
         let decoder_dims = [1, num_attention_heads, 0, d_kv];
         let encoder_dims = [1, num_attention_heads, 0, d_kv];
 
+        // TODO: 100?
+        let (tx, rx) = tokio::sync::mpsc::channel::<ort::Result<[i64; 4]>>(100);
+        let tx2 = tx.clone();
         let future = async move {
             inputs.input_ids(ort::Tensor::from_array(([8, 1], vec![pad_token_id; 8]))?)?;
 
@@ -159,7 +157,7 @@ impl MusicGen {
                 ))?)?;
 
                 if let Some(last_de_delayed) = delay_pattern_mask_ids.last_de_delayed() {
-                    let sent = tx.send(Ok(last_de_delayed));
+                    let sent = tx.send(Ok(last_de_delayed)).await;
                     if sent.is_err() {
                         break;
                     }
@@ -188,7 +186,7 @@ impl MusicGen {
 
         tokio::spawn(async move {
             if let Err(err) = future.await {
-                let _ = tx2.send(Err(err));
+                let _ = tx2.send(Err(err)).await;
             };
         });
 
@@ -200,10 +198,18 @@ impl MusicGen {
         text: &str,
         secs: usize,
         cb: Cb,
-    ) -> ort::Result<impl IntoIterator<Item = f32>> {
+    ) -> ort::Result<tokio::sync::mpsc::Receiver<ort::Result<f32>>> {
         let max_len = secs * INPUT_IDS_BATCH_PER_SECOND;
         let mut generator = self.generate_tokens(text, max_len)?;
 
+        // TODO: The signature of this function suggests that a stream is returned,
+        //  and it's true, but it's a "fake" stream. We first need to gather all
+        //  the generated token ids, concatenate them, and feed them to the audio_encodec_decode
+        //  model, because we cannot just feed it in chunks. It has some LSTMs and stateful
+        //  things that will produce weird samples if the tokens are fed in chunks, so we
+        //  need to feed them altogether at once.
+        //  If we could feed chunks of tokens to the audio_encodec_decode, we could produce
+        //  actual music streams.
         let mut data = vec![];
         let mut count = 0;
         while let Some(ids) = generator.recv().await {
@@ -220,15 +226,20 @@ impl MusicGen {
         let seq_len = data.len() / 4;
         let arr = Array::from_shape_vec((seq_len, 4), data).expect("Programming error");
         let arr = arr.t().insert_axis(Axis(0)).insert_axis(Axis(0));
-
         let mut outputs = self.audio_encodec_decode.run(ort::inputs![arr]?)?;
-
         let audio_values = outputs
             .remove("audio_values")
             .expect("audio_values not found in output");
 
-        let (_, data) = audio_values.try_extract_raw_tensor()?;
-        Ok(data.to_vec())
+        let (tx, rx) = tokio::sync::mpsc::channel(100);
+        tokio::spawn(async move {
+            let (_, data) = audio_values.try_extract_raw_tensor()?;
+            for sample in data {
+                let _ = tx.send(Ok(*sample)).await;
+            }
+            Ok::<(), ort::Error>(())
+        });
+        Ok(rx)
     }
 }
 

@@ -1,22 +1,23 @@
-use crate::config::Config;
-use clap::{Parser, ValueEnum};
-use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
 use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt::Write;
 use std::time::Duration;
 
-use crate::music_gen::{MusicGen, MusicGenLoadOptions};
+use clap::{Parser, ValueEnum};
+use indicatif::{MultiProgress, ProgressBar, ProgressState, ProgressStyle};
 
-mod config;
+use crate::audio_manager::AudioManager;
+use crate::music_gen::{MusicGen, MusicGenLoadOptions};
+use crate::storage::Storage;
+
+mod audio_manager;
 mod delay_pattern_mask_ids;
 mod logits;
 mod music_gen;
 mod music_gen_config;
 mod music_gen_inputs;
 mod music_gen_outputs;
-
-const SAMPLING_RATE: u32 = 32000;
+mod storage;
 
 const CONFIG_SMALL: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_small/config.json?download=true";
 const TOKENIZER_JSON_SMALL: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_small/tokenizer.json?download=true";
@@ -30,6 +31,13 @@ const TEXT_ENCODER_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/re
 const DECODER_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/decoder_model_merged.onnx?download=true";
 const DECODER_DATA_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/decoder_model_merged.onnx_data?download=true";
 const ENCODEC_DECODE_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/encodec_decode.onnx?download=true";
+
+const CONFIG_LARGE: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_large/config.json?download=true";
+const TOKENIZER_JSON_LARGE: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_large/tokenizer.json?download=true";
+const TEXT_ENCODER_LARGE: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_large/text_encoder.onnx?download=true";
+const DECODER_LARGE: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_large/decoder_model_merged.onnx?download=true";
+const DECODER_DATA_LARGE: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_large/decoder_model_merged.onnx_data?download=true";
+const ENCODEC_DECODE_LARGE: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_large/encodec_decode.onnx?download=true";
 
 #[derive(Clone, ValueEnum)]
 enum Model {
@@ -77,7 +85,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
             // Files below will just be downloaded,
             (DECODER_DATA_MEDIUM, "medium/decoder_model_merged.onnx_data"),
         ],
-        Model::Large => panic!("\"large\" model is not supported yet"),
+        Model::Large => vec![
+            (CONFIG_LARGE, "large/config.json"),
+            (TOKENIZER_JSON_LARGE, "large/tokenizer_json.json"),
+            (TEXT_ENCODER_LARGE, "large/text_encoder.onnx"),
+            (DECODER_LARGE, "large/decoder_model_merged.onnx"),
+            (ENCODEC_DECODE_LARGE, "large/encodec_decode.onnx"),
+            // Files below will just be downloaded,
+            (DECODER_DATA_LARGE, "large/decoder_model_merged.onnx_data"),
+        ],
     };
 
     let m = MultiProgress::new();
@@ -92,7 +108,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             &format!("{local_filename: >width$}", width = longest_name),
             1,
         ));
-        tasks.push(tokio::spawn(Config::remote_data_file(
+        tasks.push(tokio::spawn(Storage::remote_data_file(
             remote_file,
             local_filename,
             args.force_download,
@@ -120,21 +136,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     spinner.finish_and_clear();
 
     let bar = make_bar("Generating audio", 1);
-    let samples = music_gen
+    let mut sample_stream = music_gen
         .generate(&args.prompt, args.secs, |elapsed, total| {
             bar.set_length(total as u64);
             bar.set_position(elapsed as u64)
         })
         .await?;
     bar.finish_and_clear();
-
-    let spinner = make_spinner("Encoding audio");
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: SAMPLING_RATE,
-        bits_per_sample: 32,
-        sample_format: hound::SampleFormat::Float,
-    };
 
     let output = if args.output.is_empty() {
         "music-gen.wav".to_string()
@@ -143,11 +151,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     } else {
         args.output
     };
-    let mut writer = hound::WavWriter::create(output, spec).unwrap();
-    for sample in samples {
-        writer.write_sample(sample).unwrap();
+
+    let mut data = VecDeque::new();
+    while let Some(sample) = sample_stream.recv().await {
+        data.push_back(sample?)
     }
+
+    let spinner = make_spinner("Playing audio...");
+    let audio_player = AudioManager::default();
+    let (res1, res2) = tokio::join!(
+        audio_player.play_from_queue(data.clone()),
+        audio_player.store_as_wav(data, output)
+    );
+    res1?;
+    res2?;
     spinner.finish_and_clear();
+
     Ok(())
 }
 

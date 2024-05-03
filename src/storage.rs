@@ -6,11 +6,11 @@ use std::path::PathBuf;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-pub struct Config {
+pub struct Storage {
     dirs: ProjectDirs,
 }
 
-impl Config {
+impl Storage {
     fn new() -> Self {
         let dirs = ProjectDirs::from("com", "gabotechs", "music-gen")
             .expect("Could not load project directory");
@@ -34,7 +34,7 @@ impl Config {
         force: bool,
         cbk: Cb,
     ) -> std::io::Result<PathBuf> {
-        let cfg = Config::new();
+        let cfg = Storage::new();
         let mut abs_file_dir = cfg.dirs.data_dir().to_path_buf();
 
         // The provided `relative_path` might contain directories separated with /
@@ -116,13 +116,13 @@ mod tests {
         let file_name = "foo/".to_string() + &rand_string() + ".txt";
 
         let time = SystemTime::now();
-        let file = Config::remote_data_file(remote_file, &file_name, false, |_, _| {}).await?;
+        let file = Storage::remote_data_file(remote_file, &file_name, false, |_, _| {}).await?;
         let download_elapsed = SystemTime::now().duration_since(time).unwrap().as_micros();
 
         assert!(fs::try_exists(file.clone()).await?);
 
         let time = SystemTime::now();
-        Config::remote_data_file(remote_file, &file_name, false, |_, _| {}).await?;
+        Storage::remote_data_file(remote_file, &file_name, false, |_, _| {}).await?;
         let cached_elapsed = SystemTime::now().duration_since(time).unwrap().as_micros();
 
         assert!(download_elapsed / cached_elapsed > 10);
