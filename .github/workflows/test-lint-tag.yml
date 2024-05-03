@@ -1,0 +1,107 @@
+name: Test/Lint/Tag
+
+permissions:
+  actions: read
+  checks: read
+  contents: write
+  deployments: read
+  id-token: write
+  issues: write
+  packages: read
+  pages: read
+  pull-requests: write
+  repository-projects: read
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  clippy:
+    if: ${{ !startsWith(github.event.head_commit.message, 'ci:') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy
+
+  test:
+    if: ${{ !startsWith(github.event.head_commit.message, 'ci:') }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test
+
+  tag:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu
+    needs:
+      - test
+      - clippy
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.CI_TOKEN }}
+          fetch-depth: '0' # https://github.com/actions/checkout/issues/217
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-release
+      - name: Bump versions
+        run: |
+          SEM_VER=$(.github/semver.sh)
+          cargo release version $SEM_VER -x
+      - name: Tag
+        id: tag
+        run: |
+          version=`grep '^version = ' Cargo.toml | sed 's/version = //; s/\"//; s/\"//'`
+          git config user.name github-actions
+          git config user.email github-actions@github.com 
+          git add .
+          git commit -m "ci: v$version"
+          git tag "v$version"
+          git push
+          git push --tags
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: taiki-e/create-gh-release-action@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  upload-assets:
+    strategy:
+      matrix:
+        include:
+          # Linux
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            build-tool: cargo-zigbuild
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          # Mac
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          # Windows
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          bin: musicgpt
+          target: ${{ matrix.target }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          build-tool: ${{ matrix.build-tool }}
