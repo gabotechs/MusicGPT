@@ -65,15 +65,15 @@ jobs:
       - if: ${{ startsWith(matrix.os, 'ubuntu') }}
         uses: actions/cache@v3
         with:
-          path: ~/.config/musicgpt
+          path: '~/.config/musicgpt'
       - if: ${{ startsWith(matrix.os, 'windows') }}
         uses: actions/cache@v3
         with:
-          path: C:\Users\runneradmin\AppData\Roaming\gabotechs\musicgpt
+          path: 'C:\Users\runneradmin\AppData\Roaming\gabotechs\musicgpt'
       - if: ${{ startsWith(matrix.os, 'macos') }}
         uses: actions/cache@v3
         with:
-          path: ~/Library/Application Support/com.gabotechs.musicgpt
+          path: '~/Library/Application Support/com.gabotechs.musicgpt'
       - run: cargo run --release -- --prompt 'Create a LoFi song' --secs 1 --model small
 
   tag:
