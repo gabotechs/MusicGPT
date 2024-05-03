@@ -136,10 +136,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: sudo apt install librust-alsa-sys-dev
-      - run: echo "VCPKG_ROOT=$env:VCPKG_INSTALLATION_ROOT" | Out-File -FilePath $env:GITHUB_ENV -Append
-        if: ${{ startsWith(matrix.os, 'windows') }}
-      - run: vcpkg install openssl:x64-windows-static-md
-        if: ${{ startsWith(matrix.os, 'windows') }}
+      # https://github.com/sfackler/rust-openssl/issues/2149#issuecomment-2014064057
+      - if: ${{ startsWith(matrix.os, 'windows') }}
+        run: |
+          echo "PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          echo "OPENSSL_SRC_PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           bin: musicgpt
