@@ -41,6 +41,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        # https://github.com/Spotifyd/spotifyd/issues/659#issuecomment-737730954
       - if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: sudo apt install librust-alsa-sys-dev
       - run: cargo test
