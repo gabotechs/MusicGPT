@@ -93,7 +93,7 @@ jobs:
       - name: Bump versions
         run: |
           SEM_VER=$(.github/semver.sh)
-          cargo release version $SEM_VER -x
+          cargo release version $SEM_VER -x --no-confirm
       - name: Tag
         id: tag
         run: |
