@@ -1,5 +1,5 @@
 [package]
-name = "onnx-test"
+name = "musicgpt"
 version = "0.1.0"
 edition = "2021"
 
@@ -21,3 +21,4 @@ reqwest = { version = "0.12.4", features = ["stream"] }
 futures-util = "0.3.30"
 serde = "1.0.200"
 serde_json = "1.0.116"
+cpal = "0.15.3"
