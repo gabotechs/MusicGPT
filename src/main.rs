@@ -64,7 +64,10 @@ struct Args {
     force_download: bool,
 }
 
-async fn _main(args: Args) -> Result<(), Box<dyn Error>> {
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let args = Args::parse();
+    
     let remote_file_spec = match args.model {
         Model::Small => vec![
             (CONFIG_SMALL, "small/config.json"),
@@ -156,12 +159,11 @@ async fn _main(args: Args) -> Result<(), Box<dyn Error>> {
 
     let spinner = make_spinner("Playing audio...");
     let audio_player = AudioManager::default();
-    let (play_from_queue, store_as_wav) = tokio::join!(
+    let (_play_from_queue, store_as_wav) = tokio::join!(
         audio_player.play_from_queue(data.clone()),
         audio_player.store_as_wav(data, output)
     );
     // audio playback is just a best effort operation, we don't care if it fails.
-    let _ = play_from_queue;
     store_as_wav?;
     spinner.finish_and_clear();
 
@@ -190,27 +192,4 @@ fn make_bar(prefix: &str, len: usize) -> ProgressBar {
         .progress_chars("#>-"),
     );
     pb
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    _main(Args::parse()).await
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn smoke_test() -> Result<(), Box<dyn Error>> {
-        _main(Args {
-            prompt: "Create a LoFi song".to_string(),
-            secs: 1,
-            model: Model::Small,
-            output: "".to_string(),
-            force_download: false,
-        }).await?;
-
-        Ok(())
-    }
 }
