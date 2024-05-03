@@ -56,8 +56,11 @@ jobs:
             cache: '~/.config/musicgpt'
           - os: windows-latest
             cache: 'C:\Users\runneradmin\AppData\Roaming\gabotechs\musicgpt'
-          - os: macos-latest
-            cache: '~/Library/Application Support/com.gabotechs.musicgpt'
+            # TODO: There's two things wrong with this:
+            #  - too slow, like crazy slow compared to others
+            #  - does not work when cached
+#          - os: macos-latest
+#            cache: '~/Library/Application Support/com.gabotechs.musicgpt'
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -134,7 +137,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - if: ${{ startsWith(matrix.os, 'ubuntu') }}
         run: sudo apt install librust-alsa-sys-dev
       - uses: taiki-e/upload-rust-binary-action@v1
