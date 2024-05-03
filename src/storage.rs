@@ -12,7 +12,7 @@ pub struct Storage {
 
 impl Storage {
     fn new() -> Self {
-        let dirs = ProjectDirs::from("com", "gabotechs", "music-gen")
+        let dirs = ProjectDirs::from("com", "gabotechs", "musicgpt")
             .expect("Could not load project directory");
 
         Self { dirs }
