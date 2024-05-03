@@ -64,10 +64,7 @@ struct Args {
     force_download: bool,
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let args = Args::parse();
-
+async fn _main(args: Args) -> Result<(), Box<dyn Error>> {
     let remote_file_spec = match args.model {
         Model::Small => vec![
             (CONFIG_SMALL, "small/config.json"),
@@ -192,4 +189,27 @@ fn make_bar(prefix: &str, len: usize) -> ProgressBar {
         .progress_chars("#>-"),
     );
     pb
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    _main(Args::parse()).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn smoke_test() -> Result<(), Box<dyn Error>> {
+        _main(Args {
+            prompt: "Create a LoFi song".to_string(),
+            secs: 1,
+            model: Model::Small,
+            output: "".to_string(),
+            force_download: false,
+        }).await?;
+
+        Ok(())
+    }
 }
