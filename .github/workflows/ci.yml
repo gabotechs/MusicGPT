@@ -24,7 +24,6 @@ concurrency:
 
 jobs:
   clippy:
-    if: ${{ !startsWith(github.event.head_commit.message, 'ci:') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +36,6 @@ jobs:
       - run: cargo clippy
 
   unit-test:
-    if: ${{ !startsWith(github.event.head_commit.message, 'ci:') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -47,7 +45,6 @@ jobs:
       - run: cargo test
 
   smoke-test:
-    if: ${{ !startsWith(github.event.head_commit.message, 'ci:') }}
     strategy:
       fail-fast: false
       matrix:
@@ -84,7 +81,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.CI_TOKEN }}
           fetch-depth: '0' # https://github.com/actions/checkout/issues/217
 
       - uses: dtolnay/rust-toolchain@stable
