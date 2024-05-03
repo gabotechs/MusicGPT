@@ -22,7 +22,7 @@ while IFS= read -r line; do
       VERSION="patch"
     fi
   fi
-done <<< "$(git log --oneline $(git describe --tags --abbrev=0 @^)..@ | cat | awk '{print}')"
+done <<< "$(git log --oneline $(git describe --always --tags --abbrev=0 @^)..@ | cat | awk '{print}')"
 
 if [[ $VERSION == "" ]]; then
   echo "There is nothing new to release"
