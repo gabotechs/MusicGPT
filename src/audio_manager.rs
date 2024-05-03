@@ -9,7 +9,7 @@ use cpal::{ChannelCount, SampleFormat, SampleRate, SupportedBufferSize, Supporte
 const DEFAULT_SAMPLING_RATE: u32 = 32000;
 
 pub struct AudioManager {
-    device: cpal::Device,
+    host: cpal::Host,
     sample_format: SampleFormat,
     sampling_rate: u32,
     n_channels: u16,
@@ -18,12 +18,9 @@ pub struct AudioManager {
 impl Default for AudioManager {
     fn default() -> Self {
         let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .expect("Cannot find an audio output device");
 
         Self {
-            device,
+            host,
             sampling_rate: DEFAULT_SAMPLING_RATE,
             sample_format: SampleFormat::F32,
             n_channels: 1,
@@ -42,7 +39,9 @@ impl AudioManager {
             SupportedBufferSize::Unknown,
             self.sample_format,
         );
-        let stream = self.device.build_output_stream(
+
+        let device = self.host.default_output_device()?;
+        let stream = device.build_output_stream(
             &config.into(),
             move |output: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 for frame in output.chunks_mut(channels as usize) {

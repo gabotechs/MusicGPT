@@ -156,12 +156,13 @@ async fn _main(args: Args) -> Result<(), Box<dyn Error>> {
 
     let spinner = make_spinner("Playing audio...");
     let audio_player = AudioManager::default();
-    let (res1, res2) = tokio::join!(
+    let (play_from_queue, store_as_wav) = tokio::join!(
         audio_player.play_from_queue(data.clone()),
         audio_player.store_as_wav(data, output)
     );
-    res1?;
-    res2?;
+    // audio playback is just a best effort operation, we don't care if it fails.
+    let _ = play_from_queue;
+    store_as_wav?;
     spinner.finish_and_clear();
 
     Ok(())
