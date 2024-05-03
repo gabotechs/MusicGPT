@@ -113,6 +113,7 @@ jobs:
   upload-assets:
     needs: tag
     strategy:
+      fail-fast: false
       matrix:
         include:
           # Linux

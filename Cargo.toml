@@ -7,6 +7,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+openssl = { version = "0.10.59", features = ["vendored"] } # NOTE: neeeded for cross compilations
 clap = { version = "4.5.4", features = ["derive"] }
 tokenizers = "0.19.1"
 ndarray = "0.15.6"
