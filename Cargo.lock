@@ -1142,7 +1142,7 @@ dependencies = [
 
 [[package]]
 name = "musicgpt"
-version = "0.1.21"
+version = "0.1.22"
 dependencies = [
  "clap",
  "cpal",
