@@ -164,6 +164,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: refs/tags/v${{ needs.tag.outputs.version }}
           checksum: sha256
+          include: libonnxruntime.so,libonnxruntime.so.1.17.3,libonnxruntime_providers_cuda.so,libonnxruntime_providers_shared.so,libonnxruntime_providers_tensorrt.so
 
   upload-aarch64-apple-darwin:
     needs: tag
