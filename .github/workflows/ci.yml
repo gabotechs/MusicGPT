@@ -112,6 +112,18 @@ jobs:
     outputs:
       version: ${{ steps.tag.outputs.version }}
 
+  cargo-release:
+    needs: tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: sudo apt install librust-alsa-sys-dev
+      - run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
   homebrew-release:
     needs: tag
     runs-on: ubuntu-latest
