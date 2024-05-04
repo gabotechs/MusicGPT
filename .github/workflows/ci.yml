@@ -152,11 +152,12 @@ jobs:
       - run: sudo apt install librust-alsa-sys-dev
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
-          bin: musicgpt,libonnxruntime.so,libonnxruntime_providers_cuda.so,libonnxruntime_providers_shared.so,libonnxruntime_providers_tensorrt.so
+          bin: musicgpt
           target: ${{ env.TARGET }}
           token: ${{ secrets.GITHUB_TOKEN }}
           ref: refs/tags/v${{ needs.tag.outputs.version }}
           checksum: sha256
+          include: target/release/libonnxruntime.so,target/release/libonnxruntime_providers_cuda.so,target/release/libonnxruntime_providers_shared.so,target/release/libonnxruntime_providers_tensorrt.so
 
   upload-aarch64-apple-darwin:
     needs: tag
