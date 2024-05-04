@@ -1,4 +1,4 @@
-class MusicGPT < Formula
+class Musicgpt < Formula
   desc ""
   homepage "https://github.com/gabotechs/MusicGPT"
   version "<version>"

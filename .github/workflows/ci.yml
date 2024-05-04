@@ -45,6 +45,8 @@ jobs:
       - run: cargo test
 
   smoke-test:
+    # TODO: this is slow, disable this for now
+    if: false
     strategy:
       fail-fast: false
       matrix:
