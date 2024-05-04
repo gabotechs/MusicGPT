@@ -67,7 +67,7 @@ struct Args {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    
+
     let remote_file_spec = match args.model {
         Model::Small => vec![
             (CONFIG_SMALL, "small/config.json"),
@@ -132,7 +132,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         decoder_model_merged: results.pop_front().unwrap(),
         audio_encodec_decode: results.pop_front().unwrap(),
     })
-    .await?;
+        .await?;
     spinner.finish_and_clear();
 
     let bar = make_bar("Generating audio", 1);
@@ -185,11 +185,11 @@ fn make_bar(prefix: &str, len: usize) -> ProgressBar {
             &(prefix.to_string()
                 + " {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] ({eta})"),
         )
-        .unwrap()
-        .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
-            write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
-        })
-        .progress_chars("#>-"),
+            .unwrap()
+            .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
+                write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
+            })
+            .progress_chars("#>-"),
     );
     pb
 }

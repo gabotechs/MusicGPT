@@ -32,9 +32,3 @@ ort = { version = "2.0.0-rc.2", features = ["coreml"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ort = { version = "2.0.0-rc.2", features = ["cuda", "tensorrt"] }
-
-[workspace.metadata.cross.target.aarch64-unknown-linux-gnu]
-pre-build = [
-    "dpkg --add-architecture $CROSS_DEB_ARCH",
-    "apt-get update && apt-get install --assume-yes librust-alsa-sys-dev",
-]
