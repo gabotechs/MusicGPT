@@ -5,14 +5,14 @@ class Musicgpt < Formula
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/gabotechs/MusicGPT/releases/download/v<version>/musicgpt-aarch64-apple-darwin.tar.gz"
+      url "https://github.com/gabotechs/MusicGPT/releases/download/v<version>/aarch64-apple-darwin.tar.gz"
 
       def install
         bin.install "musicgpt"
       end
     end
     if Hardware::CPU.intel?
-      url "https://github.com/gabotechs/MusicGPT/releases/download/v<version>/musicgpt-x86_64-apple-darwin.tar.gz"
+      url "https://github.com/gabotechs/MusicGPT/releases/download/v<version>/x86_64-apple-darwin.tar.gz"
 
       def install
         bin.install "musicgpt"
@@ -22,7 +22,7 @@ class Musicgpt < Formula
 
   on_linux do
     if Hardware::CPU.intel?
-      url "https://github.com/gabotechs/MusicGPT/releases/download/v<version>/musicgpt-x86_64-unknown-linux-gnu.tar.gz"
+      url "https://github.com/gabotechs/MusicGPT/releases/download/v<version>/x86_64-unknown-linux-gnu.tar.gz"
 
       def install
         bin.install "musicgpt"
