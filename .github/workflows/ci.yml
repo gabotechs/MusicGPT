@@ -116,12 +116,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          path: repo
-      - uses: actions/checkout@v4
-        with:
           repository: gabotechs/homebrew-taps
           token: ${{ secrets.CI_TOKEN }}
-      - run: ls
+      - uses: actions/checkout@v4
+        with:
+          path: repo
       - run: sed "s/<version>/${{ needs.tag.outputs.version }}/g" repo/.github/musicgpt.rb > musicgpt.rb
       - run: |
           git add musicgpt.rb
