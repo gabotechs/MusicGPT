@@ -11,7 +11,6 @@ fi
 ARCHIVE="$1"
 BIN=musicgpt
 RELEASE_DIR=target/release
-LIBS=()
 
 if [ ! -f $RELEASE_DIR/$BIN ]; then
   RELEASE_DIR=target/$ARCHIVE/release
@@ -22,22 +21,18 @@ if [ ! -f $RELEASE_DIR/$BIN ]; then
   exit 1
 fi
 
-# https://github.com/pykeio/ort dumps symlinked dynamic libs into
-# target/release, so we must follow the links to the actual files.
-for file in $(ls $RELEASE_DIR); do
-  if [[ "$file" == *.so* ]]; then
-    LIBS+=("$(readlink $RELEASE_DIR/$file)")
-  fi
-done
-
 
 tmpdir=$(mktemp -d)
 mkdir -p "${tmpdir}/${ARCHIVE}/lib"
 
 cp "${RELEASE_DIR}/${BIN}" "${tmpdir}/${ARCHIVE}"
 
-for lib in "${LIBS[@]}"; do
-  cp $lib "${tmpdir}/${ARCHIVE}/lib"
+# https://github.com/pykeio/ort dumps symlinked dynamic libs into
+# target/release, so we must follow the links to the actual files.
+for file in $(ls $RELEASE_DIR); do
+  if [[ "$file" == *.so* ]]; then
+    cp "$(readlink $RELEASE_DIR/$file)" "${tmpdir}/${ARCHIVE}/lib/${file}"
+  fi
 done
 
 cwd=$(pwd)
