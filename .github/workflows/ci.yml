@@ -78,7 +78,7 @@ jobs:
     runs-on: ubuntu-latest
     needs:
       - unit-test
-      - smoke-test
+#      - smoke-test
       - clippy
     steps:
       - uses: actions/checkout@v4
