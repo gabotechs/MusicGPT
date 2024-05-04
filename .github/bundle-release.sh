@@ -2,7 +2,6 @@
 
 # WARNING: this script only works if executed from the root of the repo.
 
-
 if [ -z "$1" ]; then
   echo "The archive name must be provided"
   exit 1
@@ -12,8 +11,6 @@ ARCHIVE="$1"
 BIN=target/release/musicgpt
 LIBS=()
 
-cargo build --release
-
 # https://github.com/pykeio/ort dumps symlinked dynamic libs into
 # target/release, so we must follow the links to the actual files.
 for file in target/release/*.so*; do
@@ -21,12 +18,12 @@ for file in target/release/*.so*; do
 done
 
 tmpdir=$(mktemp -d)
-mkdir -p "${tmpdir}/${ARCHIVE}" 
+mkdir -p "${tmpdir}/${ARCHIVE}/lib"
 
 cp $BIN "${tmpdir}/${ARCHIVE}"
 
 for lib in "${LIBS[@]}"; do
-  cp $lib "${tmpdir}/${ARCHIVE}"
+  cp $lib "${tmpdir}/${ARCHIVE}/lib"
 done
 
 cwd=$(pwd)

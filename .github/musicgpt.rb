@@ -26,7 +26,7 @@ class Musicgpt < Formula
 
       def install
         bin.install "musicgpt"
-        lib.install Dir["*.so"]
+        lib.install Dir["lib/*"]
       end
     end
 # TODO: Linux ARM still does not work.
