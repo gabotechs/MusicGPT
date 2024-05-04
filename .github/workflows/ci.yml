@@ -110,6 +110,25 @@ jobs:
     outputs:
       version: ${{ steps.tag.outputs.version }}
 
+  homebrew-release:
+    needs: tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: repo
+      - uses: actions/checkout@v4
+        with:
+          repository: gabotechs/homebrew-taps
+          token: ${{ secrets.CI_TOKEN }}
+      - run:  sed "s/<version>/${{ needs.tag.outputs.version }}/g" repo/.github/musicgpt.rb > musicgpt.rb
+      - run: |
+          git add musicgpt.rb
+          git config user.name github-actions
+          git config user.email github-actions@github.com 
+          git commit -m "Brew formula update for musicgpt version v${{ needs.tag.outputs.version }}"
+          git push
+
   upload-assets:
     needs: tag
     strategy:
