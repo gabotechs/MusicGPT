@@ -119,7 +119,7 @@ jobs:
           # Linux
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
-            build-tool: cargo-zigbuild
+            build-tool: cross
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
           # Mac
