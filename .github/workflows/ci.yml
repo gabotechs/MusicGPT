@@ -167,3 +167,4 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           build-tool: ${{ matrix.build-tool }}
           ref: refs/tags/v${{ needs.tag.outputs.version }}
+          checksum: sha256
