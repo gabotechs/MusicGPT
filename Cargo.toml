@@ -32,6 +32,3 @@ ort = { version = "2.0.0-rc.2", features = ["coreml"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ort = { version = "2.0.0-rc.2", features = ["cuda", "tensorrt"] }
-
-[target.'cfg(all(target_os = "linux", target_arch = "aarch64"))'.dependencies]
-cpal = { version = "0.15.3", features = ["jack"] }

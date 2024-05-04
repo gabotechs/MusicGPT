@@ -138,9 +138,10 @@ jobs:
       matrix:
         include:
           # Linux
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            build-tool: cross
+# TODO: Linux ARM still does not work
+#          - target: aarch64-unknown-linux-gnu
+#            os: ubuntu-latest
+#            build-tool: cross
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
           # Mac

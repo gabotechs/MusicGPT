@@ -28,12 +28,13 @@ class Musicgpt < Formula
         bin.install "musicgpt"
       end
     end
-    if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
-      url "https://github.com/gabotechs/MusicGPT/releases/download/v<version>/musicgpt-aarch64-unknown-linux-gnu.tar.gz"
-
-      def install
-        bin.install "musicgpt"
-      end
-    end
+# TODO: Linux ARM still does not work.
+#     if Hardware::CPU.arm? && Hardware::CPU.is_64_bit?
+#       url "https://github.com/gabotechs/MusicGPT/releases/download/v<version>/musicgpt-aarch64-unknown-linux-gnu.tar.gz"
+#
+#       def install
+#         bin.install "musicgpt"
+#       end
+#     end
   end
 end
