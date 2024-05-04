@@ -143,43 +143,90 @@ jobs:
           git commit -m "Brew formula update for musicgpt version v${{ needs.tag.outputs.version }}"
           git push
 
-  upload-assets:
+  upload-x86_64-unknown-linux-gnu:
     needs: tag
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # Linux
-# TODO: Linux ARM still does not work
-#          - target: aarch64-unknown-linux-gnu
-#            os: ubuntu-latest
-#            build-tool: cross
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          # Mac
-          - target: aarch64-apple-darwin
-            os: macos-latest
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          # Windows
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    env:
+      TARGET: x86_64-unknown-linux-gnu
+      ONNX_STATIC_FILE: onnxruntime-linux-x64-static_lib-1.17.3-gcc-11
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - if: ${{ startsWith(matrix.os, 'ubuntu') }}
-        run: sudo apt install librust-alsa-sys-dev
-      # https://github.com/sfackler/rust-openssl/issues/2149#issuecomment-2014064057
-      - if: ${{ startsWith(matrix.os, 'windows') }}
-        run: |
-          echo "PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          echo "OPENSSL_SRC_PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - run: sudo apt install librust-alsa-sys-dev
+      - run: wget https://huggingface.co/gabotechs/onnxruntime-libs/resolve/main/${{ env.ONNX_STATIC_FILE }}.zip?download=true ${{ env.ONNX_STATIC_FILE }}.zip
+      - run: unzip ${{ env.ONNX_STATIC_FILE }}.zip
       - uses: taiki-e/upload-rust-binary-action@v1
+        env:
+          ORT_LIB_LOCATION: ${{ env.ONNX_STATIC_FILE }}/lib
         with:
           bin: musicgpt
-          target: ${{ matrix.target }}
+          target: ${{ env.TARGET }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          build-tool: ${{ matrix.build-tool }}
+          ref: refs/tags/v${{ needs.tag.outputs.version }}
+          checksum: sha256
+
+  upload-aarch64-apple-darwin:
+    needs: tag
+    runs-on: macos-latest
+    env:
+      TARGET: aarch64-apple-darwin
+      ONNX_STATIC_FILE: onnxruntime-osx-arm64-static_lib-1.17.3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: wget https://huggingface.co/gabotechs/onnxruntime-libs/resolve/main/${{ env.ONNX_STATIC_FILE }}.zip?download=true ${{ env.ONNX_STATIC_FILE }}.zip
+      - run: unzip ${{ env.ONNX_STATIC_FILE }}.zip
+      - uses: taiki-e/upload-rust-binary-action@v1
+        env:
+          ORT_LIB_LOCATION: ${{ env.ONNX_STATIC_FILE }}/lib
+        with:
+          bin: musicgpt
+          target: ${{ env.TARGET }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: refs/tags/v${{ needs.tag.outputs.version }}
+          checksum: sha256
+
+  upload-x86_64-apple-darwin:
+    needs: tag
+    runs-on: macos-latest
+    env:
+      TARGET: x86_64-apple-darwin
+      ONNX_STATIC_FILE: onnxruntime-osx-x86_64-static_lib-1.17.3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: wget https://huggingface.co/gabotechs/onnxruntime-libs/resolve/main/${{ env.ONNX_STATIC_FILE }}.zip?download=true ${{ env.ONNX_STATIC_FILE }}.zip
+      - run: unzip ${{ env.ONNX_STATIC_FILE }}.zip
+      - uses: taiki-e/upload-rust-binary-action@v1
+        env:
+          ORT_LIB_LOCATION: ${{ env.ONNX_STATIC_FILE }}/lib
+        with:
+          bin: musicgpt
+          target: ${{ env.TARGET }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          ref: refs/tags/v${{ needs.tag.outputs.version }}
+          checksum: sha256
+
+  upload-x86_64-pc-windows-msvc:
+    needs: tag
+    runs-on: windows-latest
+    env:
+      TARGET: x86_64-pc-windows-msvc
+      ONNX_STATIC_FILE: onnxruntime-win-x64-static_lib-1.17.3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: |
+          echo "PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          echo "OPENSSL_SRC_PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - run: Invoke-WebRequest -Uri https://huggingface.co/gabotechs/onnxruntime-libs/resolve/main/${{ env.ONNX_STATIC_FILE }}.tar.bz2?download=true -OutFile ${{ env.ONNX_STATIC_FILE }}.tar.bz2
+      - run: 7z x ${{ env.ONNX_STATIC_FILE }}.tar.bz2 -so | 7z x -si -ttar
+      - uses: taiki-e/upload-rust-binary-action@v1
+        env:
+          ORT_LIB_LOCATION: ${{ env.ONNX_STATIC_FILE }}\lib
+        with:
+          bin: musicgpt
+          target: ${{ env.TARGET }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           ref: refs/tags/v${{ needs.tag.outputs.version }}
           checksum: sha256
