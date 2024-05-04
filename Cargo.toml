@@ -3,6 +3,8 @@ name = "musicgpt"
 license = "MIT"
 version = "0.1.15"
 edition = "2021"
+description = "Generate music samples from natural language locally with your own computer"
+keywords = ["llm", "music", "audio", "ai"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
