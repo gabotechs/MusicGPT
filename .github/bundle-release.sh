@@ -8,19 +8,32 @@ if [ -z "$1" ]; then
 fi
 
 ARCHIVE="$1"
-BIN=target/release/musicgpt
+BIN=musicgpt
+RELEASE_DIR=target/release
 LIBS=()
+
+if [ ! -f $RELEASE_DIR/$BIN ]; then
+  RELEASE_DIR=target/$ARCHIVE/release
+fi
+
+if [ ! -f $RELEASE_DIR/$BIN ]; then
+  echo "Could not find target release dir in $RELEASE_DIR or target/release"
+  exit 1
+fi
 
 # https://github.com/pykeio/ort dumps symlinked dynamic libs into
 # target/release, so we must follow the links to the actual files.
-for file in target/release/*.so*; do
-  LIBS+=("$(readlink $file)")
+for file in $RELEASE_DIR; do
+  if [ "$file" == *.so* ]; then
+    LIBS+=("$(readlink $file)")
+  fi
 done
+
 
 tmpdir=$(mktemp -d)
 mkdir -p "${tmpdir}/${ARCHIVE}/lib"
 
-cp $BIN "${tmpdir}/${ARCHIVE}"
+cp "${RELEASE_DIR}/${BIN}" "${tmpdir}/${ARCHIVE}"
 
 for lib in "${LIBS[@]}"; do
   cp $lib "${tmpdir}/${ARCHIVE}/lib"
