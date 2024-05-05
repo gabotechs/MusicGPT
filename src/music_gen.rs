@@ -1,14 +1,11 @@
 use std::fmt::Debug;
 use std::fs;
+use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ndarray::{Array, Axis};
 use num_traits::{One, Zero};
-use ort::{
-    CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
-    TensorRTExecutionProvider,
-};
 use tokenizers::Tokenizer;
 
 use crate::delay_pattern_mask_ids::DelayedPatternMaskIds;
@@ -16,32 +13,31 @@ use crate::music_gen_config::MusicGenConfig;
 use crate::music_gen_inputs::MusicGenInputs;
 use crate::music_gen_outputs::MusicGenOutputs;
 
+pub trait MusicGenType: ort::IntoTensorElementType + Debug + Clone + Zero {}
+
+impl MusicGenType for u8 {}
+impl MusicGenType for i8 {}
+impl MusicGenType for f32 {}
+impl MusicGenType for half::f16 {}
+
 // TODO: is this configurable?
 const GUIDANCE_SCALE: usize = 3;
 // I calculated this myself.
-const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
+pub const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
 
 async fn build_session<P: AsRef<Path> + Debug>(path: P) -> ort::Result<ort::Session> {
     ort::Session::builder()?
         .with_intra_threads(4)?
-        .with_execution_providers([
-            // Prefer TensorRT over CUDA.
-            TensorRTExecutionProvider::default().build(),
-            CUDAExecutionProvider::default().build(),
-            // Use DirectML on Windows if NVIDIA EPs are not available
-            DirectMLExecutionProvider::default().build(),
-            // Or use ANE on Apple platforms
-            CoreMLExecutionProvider::default().build(),
-        ])?
         .commit_from_file(path)
 }
 
-pub struct MusicGen {
+pub struct MusicGen<T: MusicGenType> {
     tokenizer: Tokenizer,
     text_encoder: ort::Session,
     decoder_model_merged: Arc<ort::Session>,
     audio_encodec_decode: ort::Session,
     config: MusicGenConfig,
+    _phantom_data: PhantomData<T>
 }
 
 pub struct MusicGenLoadOptions {
@@ -52,7 +48,7 @@ pub struct MusicGenLoadOptions {
     pub config: PathBuf,
 }
 
-impl MusicGen {
+impl<T: MusicGenType + 'static> MusicGen<T> {
     pub async fn load(opts: MusicGenLoadOptions) -> ort::Result<Self> {
         let mut tokenizer = Tokenizer::from_file(opts.tokenizer)?;
         tokenizer.with_padding(None).with_truncation(None)?;
@@ -72,6 +68,7 @@ impl MusicGen {
             decoder_model_merged: Arc::new(result.1?),
             audio_encodec_decode: result.2?,
             config,
+            _phantom_data: PhantomData::default()
         })
     }
 
@@ -104,7 +101,7 @@ impl MusicGen {
         // Apparently, there's a setting in huggingface's transformers that says that
         // if `guidance_scale` > 1 then you should concatenate 0 along the first axis.
         let encoder_hidden_states =
-            dupe_zeros_along_first_dim::<f32>(last_hidden_state.downcast()?)?;
+            dupe_zeros_along_first_dim::<T>(last_hidden_state.downcast()?)?;
         let encoder_attention_mask =
             dupe_zeros_along_first_dim::<i64>(ones_tensor(&[1, tokens_len]))?;
 
@@ -131,10 +128,10 @@ impl MusicGen {
             inputs.input_ids(ort::Tensor::from_array(([8, 1], vec![pad_token_id; 8]))?)?;
 
             for i in 0..num_hidden_layers {
-                inputs.past_key_value_decoder_key(i, zeros_tensor::<f32>(&decoder_dims))?;
-                inputs.past_key_value_decoder_value(i, zeros_tensor::<f32>(&decoder_dims))?;
-                inputs.past_key_value_encoder_key(i, zeros_tensor::<f32>(&encoder_dims))?;
-                inputs.past_key_value_encoder_value(i, zeros_tensor::<f32>(&encoder_dims))?;
+                inputs.past_key_value_decoder_key(i, zeros_tensor::<T>(&decoder_dims))?;
+                inputs.past_key_value_decoder_value(i, zeros_tensor::<T>(&decoder_dims))?;
+                inputs.past_key_value_encoder_key(i, zeros_tensor::<T>(&encoder_dims))?;
+                inputs.past_key_value_encoder_value(i, zeros_tensor::<T>(&encoder_dims))?;
             }
             inputs.use_cache_branch(false);
             for _ in 0..max_len {
@@ -192,7 +189,7 @@ impl MusicGen {
 
         Ok(rx)
     }
-
+    
     pub async fn generate<Cb: Fn(usize, usize)>(
         &self,
         text: &str,
@@ -227,7 +224,7 @@ impl MusicGen {
         let arr = Array::from_shape_vec((seq_len, 4), data).expect("Programming error");
         let arr = arr.t().insert_axis(Axis(0)).insert_axis(Axis(0));
         let mut outputs = self.audio_encodec_decode.run(ort::inputs![arr]?)?;
-        let audio_values = outputs
+        let audio_values: ort::DynValue = outputs
             .remove("audio_values")
             .expect("audio_values not found in output");
 
