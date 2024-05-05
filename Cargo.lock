@@ -1158,6 +1158,7 @@ dependencies = [
  "half",
  "hound",
  "indicatif",
+ "lazy_static",
  "log",
  "ndarray",
  "num-traits",

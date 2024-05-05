@@ -3,8 +3,8 @@ use std::error::Error;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use cpal::{ChannelCount, SampleFormat, SampleRate, SupportedBufferSize, SupportedStreamConfig};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{ChannelCount, SampleFormat, SampleRate, SupportedBufferSize, SupportedStreamConfig};
 
 const DEFAULT_SAMPLING_RATE: u32 = 32000;
 
@@ -42,7 +42,7 @@ impl AudioManager {
 
         let device = match self.host.default_output_device() {
             None => return Err("No audio device".into()),
-            Some(v) => v
+            Some(v) => v,
         };
         let stream = device.build_output_stream(
             &config.into(),

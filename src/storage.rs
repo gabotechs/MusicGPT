@@ -1,21 +1,23 @@
 use directories::ProjectDirs;
 use futures_util::StreamExt;
+use lazy_static::lazy_static;
 use reqwest::StatusCode;
 use std::error;
 use std::path::PathBuf;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-pub struct Storage {
-    dirs: ProjectDirs,
+pub struct Storage;
+
+lazy_static! {
+    static ref PROJECT_DIRS: ProjectDirs = ProjectDirs::from("com", "gabotechs", "musicgpt")
+        .expect("Could not load project directory");
 }
 
 impl Storage {
-    fn new() -> Self {
-        let dirs = ProjectDirs::from("com", "gabotechs", "musicgpt")
-            .expect("Could not load project directory");
-
-        Self { dirs }
+    pub async fn exists(relative_file: &str) -> std::io::Result<bool> {
+        let (abs_file_path, _, _) = Self::relative_file_to_path_buf(relative_file);
+        fs::try_exists(abs_file_path).await
     }
 
     /// Loads a remote from the local data directory, downloading it from
@@ -34,20 +36,9 @@ impl Storage {
         force: bool,
         cbk: Cb,
     ) -> std::io::Result<PathBuf> {
-        let cfg = Storage::new();
-        let mut abs_file_dir = cfg.dirs.data_dir().to_path_buf();
+        let (abs_file_path, abs_file_dir, file_name) =
+            Self::relative_file_to_path_buf(relative_file);
 
-        // The provided `relative_path` might contain directories separated with /
-        let mut relative_file_elements = relative_file.split('/').collect::<Vec<_>>();
-        // so take the file name...
-        let file_name = relative_file_elements
-            .pop()
-            .expect("provided path was empty");
-        // ... and append the rest of the elements to the base directory.
-        for element in relative_file_elements {
-            abs_file_dir = abs_file_dir.join(element);
-        }
-        let abs_file_path = abs_file_dir.join(file_name);
         // At this point, the file might already exist on disk, so nothing else to do.
         if fs::try_exists(abs_file_path.clone()).await? && !force {
             return Ok(abs_file_path);
@@ -85,6 +76,32 @@ impl Storage {
         fs::rename(temp_abs_file_path, abs_file_path.clone()).await?;
 
         Ok(abs_file_path)
+    }
+
+    /// Gets a / separated relative path and returns:
+    /// - The absolute path in the disk
+    /// - The absolute path of the dir containing the file in the dis
+    /// - The filename
+    ///
+    /// # Arguments
+    ///
+    /// * `relative_file`: Path relative to the applications data dir
+    ///
+    /// returns: (PathBuf, PathBuf, &str) (abs file path, abs dir path, file name)
+    fn relative_file_to_path_buf(relative_file: &str) -> (PathBuf, PathBuf, &str) {
+        let mut abs_file_dir = PROJECT_DIRS.data_dir().to_path_buf();
+
+        // The provided `relative_path` might contain directories separated with /
+        let mut relative_file_elements = relative_file.split('/').collect::<Vec<_>>();
+        // so take the file name...
+        let file_name = relative_file_elements
+            .pop()
+            .expect("provided path was empty");
+        // ... and append the rest of the elements to the base directory.
+        for element in relative_file_elements {
+            abs_file_dir = abs_file_dir.join(element);
+        }
+        (abs_file_dir.join(file_name), abs_file_dir, file_name)
     }
 }
 

@@ -27,6 +27,7 @@ serde_json = "1.0.116"
 cpal = "0.15.3"
 ort = { version = "2.0.0-rc.2" , features = ["half"]}
 half = { version = "2.4.1", features = ["num-traits"] }
+lazy_static = "1.4.0"
 
 # TODO: Creating a statically compiled version with CUDA support is a huge mess,
 #  and distributing shared libraries for supporting cuda is also a huge mess.

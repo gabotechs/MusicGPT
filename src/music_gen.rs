@@ -37,7 +37,7 @@ pub struct MusicGen<T: MusicGenType> {
     decoder_model_merged: Arc<ort::Session>,
     audio_encodec_decode: ort::Session,
     config: MusicGenConfig,
-    _phantom_data: PhantomData<T>
+    _phantom_data: PhantomData<T>,
 }
 
 pub struct MusicGenLoadOptions {
@@ -68,7 +68,7 @@ impl<T: MusicGenType + 'static> MusicGen<T> {
             decoder_model_merged: Arc::new(result.1?),
             audio_encodec_decode: result.2?,
             config,
-            _phantom_data: PhantomData::default()
+            _phantom_data: PhantomData,
         })
     }
 
@@ -100,8 +100,7 @@ impl<T: MusicGenType + 'static> MusicGen<T> {
 
         // Apparently, there's a setting in huggingface's transformers that says that
         // if `guidance_scale` > 1 then you should concatenate 0 along the first axis.
-        let encoder_hidden_states =
-            dupe_zeros_along_first_dim::<T>(last_hidden_state.downcast()?)?;
+        let encoder_hidden_states = dupe_zeros_along_first_dim::<T>(last_hidden_state.downcast()?)?;
         let encoder_attention_mask =
             dupe_zeros_along_first_dim::<i64>(ones_tensor(&[1, tokens_len]))?;
 
@@ -189,7 +188,7 @@ impl<T: MusicGenType + 'static> MusicGen<T> {
 
         Ok(rx)
     }
-    
+
     pub async fn generate<Cb: Fn(usize, usize)>(
         &self,
         text: &str,
