@@ -67,10 +67,10 @@ jobs:
         with:
           path: $HOME/.cache/ort.pyke.io # <- onnxruntime libs are placed here by ort
           key: ${{ runner.os }}-ort.pyke.io
-      - run: cargo run --release -- --prompt 'Create a LoFi song' --secs 1 --model small-quant
+      - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant
 
   smoke-test-mac:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -79,10 +79,10 @@ jobs:
         with:
           path: $HOME/Library/Caches/ort.pyke.io # <- onnxruntime libs are placed here by ort
           key: ${{ runner.os }}-ort.pyke.io
-      - run: cargo run --release -- --prompt 'Create a LoFi song' --secs 1 --model small-quant
+      - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant
 
   smoke-test-windows:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -91,7 +91,7 @@ jobs:
 #        with:
 #          path: TODO: Where are pyke files located
 #          key: ${{ runner.os }}-ort.pyke.io
-      - run: cargo run --release -- --prompt 'Create a LoFi song' --secs 1 --model small-quant
+      - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant
 
   tag:
     if: github.ref == 'refs/heads/main'
