@@ -69,16 +69,15 @@ struct Args {
     force_download: bool,
 
     #[arg(long, default_value = "false")]
-    cpu: bool,
+    gpu: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
-    if args.cpu {
-        ort::init().commit()?
-    } else {
+    if args.gpu {
+        println!("WARNING: GPU support is experimental, it might not work on most platforms");
         ort::init()
             .with_execution_providers([
                 // Prefer TensorRT over CUDA.
@@ -89,6 +88,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 // Or use ANE on Apple platforms
                 CoreMLExecutionProvider::default().build(),
             ]).commit()?;
+    } else {
+        ort::init().commit()?;
     };
 
     // Note that here some destination paths are exactly the same no matter the model.
@@ -189,7 +190,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut sample_stream = match args.model {
         Model::Small | Model::Medium | Model::Large => run_model!(f32),
         // Surprisingly, the quantized model also used f32 for inputs and outputs.
-         Model::SmallQuant => run_model!(f32),
+        Model::SmallQuant => run_model!(f32),
         // Whenever this can run other types (like fp16), more entries should go here.
     };
 
