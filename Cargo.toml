@@ -28,10 +28,10 @@ cpal = "0.15.3"
 ort = "2.0.0-rc.2"
 
 #[target.'cfg(target_os = "windows")'.dependencies]
-#ort = { version = "2.0.0-rc.2", features = ["cuda", "tensorrt"] }
-#
-#[target.'cfg(target_os = "macos")'.dependencies]
-#ort = { version = "2.0.0-rc.2", features = ["coreml"] }
-#
-#[target.'cfg(target_os = "linux")'.dependencies]
-#ort = { version = "2.0.0-rc.2", features = ["cuda", "tensorrt"] }
+#ort = { version = "2.0.0-rc.2", features = ["cuda"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+ort = { version = "2.0.0-rc.2", features = ["coreml"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ort = { version = "2.0.0-rc.2", features = ["cuda"] }

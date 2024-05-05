@@ -190,4 +190,5 @@ jobs:
           echo "OPENSSL_SRC_PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
       - run: cargo build --release --target x86_64-pc-windows-msvc
       - run: ./.github/bundle-release.sh x86_64-pc-windows-msvc
+        shell: bash
       - run: gh release upload v${{ needs.tag.outputs.version }} x86_64-pc-windows-msvc.tar.gz
