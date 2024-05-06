@@ -4,14 +4,16 @@ use std::marker::PhantomData;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use ndarray::{Array, Axis};
-use num_traits::{One, Zero};
+use num_traits::Zero;
 use tokenizers::Tokenizer;
 
 use crate::delay_pattern_mask_ids::DelayedPatternMaskIds;
+use crate::music_gen_audio_encodec::MusicGenAudioEncodec;
 use crate::music_gen_config::MusicGenConfig;
 use crate::music_gen_inputs::MusicGenInputs;
 use crate::music_gen_outputs::MusicGenOutputs;
+use crate::music_gen_text_encoder::MusicGenTextEncoder;
+use crate::tensor_ops::{dupe_zeros_along_first_dim, zeros_tensor};
 
 pub trait MusicGenType: ort::IntoTensorElementType + Debug + Clone + Zero {}
 
@@ -25,17 +27,16 @@ const GUIDANCE_SCALE: usize = 3;
 // I calculated this myself.
 pub const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
 
-async fn build_session<P: AsRef<Path> + Debug>(path: P) -> ort::Result<ort::Session> {
+pub async fn build_session<P: AsRef<Path> + Debug>(path: P) -> ort::Result<ort::Session> {
     ort::Session::builder()?
         .with_intra_threads(4)?
         .commit_from_file(path)
 }
 
 pub struct MusicGen<T: MusicGenType> {
-    tokenizer: Tokenizer,
-    text_encoder: ort::Session,
+    text_encoder: MusicGenTextEncoder,
+    audio_encodec: MusicGenAudioEncodec,
     decoder_model_merged: Arc<ort::Session>,
-    audio_encodec_decode: ort::Session,
     config: MusicGenConfig,
     _phantom_data: PhantomData<T>,
 }
@@ -63,10 +64,14 @@ impl<T: MusicGenType + 'static> MusicGen<T> {
         );
 
         Ok(Self {
-            tokenizer,
-            text_encoder: result.0?,
+            text_encoder: MusicGenTextEncoder {
+                tokenizer,
+                text_encoder: result.0?,
+            },
             decoder_model_merged: Arc::new(result.1?),
-            audio_encodec_decode: result.2?,
+            audio_encodec: MusicGenAudioEncodec {
+                audio_encodec_decode: result.2?,
+            },
             config,
             _phantom_data: PhantomData,
         })
@@ -77,32 +82,13 @@ impl<T: MusicGenType + 'static> MusicGen<T> {
         text: &str,
         max_len: usize,
     ) -> ort::Result<tokio::sync::mpsc::Receiver<ort::Result<[i64; 4]>>> {
-        let tokens = self
-            .tokenizer
-            .encode(text, true)
-            .expect("Error tokenizing text")
-            .get_ids()
-            .iter()
-            .map(|e| *e as i64)
-            .collect::<Vec<_>>();
-
-        let tokens_len = tokens.len();
-        let input_ids = ort::Tensor::from_array(([1, tokens_len], tokens))?;
-        let attention_mask = ones_tensor::<i64>(&[1, tokens_len]);
-
-        let mut output = self
-            .text_encoder
-            .run(ort::inputs![input_ids, attention_mask]?)?;
-
-        let last_hidden_state = output
-            .remove("last_hidden_state")
-            .expect("last_hidden_state not found in output");
+        let (last_hidden_state, encoder_attention_mask) = self.text_encoder.encode(text)?;
 
         // Apparently, there's a setting in huggingface's transformers that says that
         // if `guidance_scale` > 1 then you should concatenate 0 along the first axis.
         let encoder_hidden_states = dupe_zeros_along_first_dim::<T>(last_hidden_state.downcast()?)?;
         let encoder_attention_mask =
-            dupe_zeros_along_first_dim::<i64>(ones_tensor(&[1, tokens_len]))?;
+            dupe_zeros_along_first_dim::<i64>(encoder_attention_mask.downcast()?)?;
 
         let mut delay_pattern_mask_ids = DelayedPatternMaskIds::<4>::new();
 
@@ -196,66 +182,8 @@ impl<T: MusicGenType + 'static> MusicGen<T> {
         cb: Cb,
     ) -> ort::Result<tokio::sync::mpsc::Receiver<ort::Result<f32>>> {
         let max_len = secs * INPUT_IDS_BATCH_PER_SECOND;
-        let mut generator = self.generate_tokens(text, max_len)?;
-
-        // TODO: The signature of this function suggests that a stream is returned,
-        //  and it's true, but it's a "fake" stream. We first need to gather all
-        //  the generated token ids, concatenate them, and feed them to the audio_encodec_decode
-        //  model, because we cannot just feed it in chunks. It has some LSTMs and stateful
-        //  things that will produce weird samples if the tokens are fed in chunks, so we
-        //  need to feed them altogether at once.
-        //  If we could feed chunks of tokens to the audio_encodec_decode, we could produce
-        //  actual music streams.
-        let mut data = vec![];
-        let mut count = 0;
-        while let Some(ids) = generator.recv().await {
-            let ids = match ids {
-                Ok(ids) => ids,
-                Err(err) => return Err(err),
-            };
-            count += 1;
-            cb(count, max_len);
-            for id in ids {
-                data.push(id)
-            }
-        }
-        let seq_len = data.len() / 4;
-        let arr = Array::from_shape_vec((seq_len, 4), data).expect("Programming error");
-        let arr = arr.t().insert_axis(Axis(0)).insert_axis(Axis(0));
-        let mut outputs = self.audio_encodec_decode.run(ort::inputs![arr]?)?;
-        let audio_values: ort::DynValue = outputs
-            .remove("audio_values")
-            .expect("audio_values not found in output");
-
-        let (tx, rx) = tokio::sync::mpsc::channel(100);
-        tokio::spawn(async move {
-            let (_, data) = audio_values.try_extract_raw_tensor()?;
-            for sample in data {
-                let _ = tx.send(Ok(*sample)).await;
-            }
-            Ok::<(), ort::Error>(())
-        });
-        Ok(rx)
+        let generator = self.generate_tokens(text, max_len)?;
+        self.audio_encodec.encode(generator, max_len, cb).await
     }
 }
 
-fn zeros_tensor<T: ort::IntoTensorElementType + Debug + Clone + Zero + 'static>(
-    shape: &[usize],
-) -> ort::Tensor<T> {
-    ort::Value::from_array(Array::<T, _>::zeros(shape)).expect("Could not build zeros tensor")
-}
-
-fn ones_tensor<T: ort::IntoTensorElementType + Debug + Clone + One + 'static>(
-    shape: &[usize],
-) -> ort::Tensor<T> {
-    ort::Value::from_array(Array::<T, _>::ones(shape)).expect("Could not build zeros tensor")
-}
-
-fn dupe_zeros_along_first_dim<T: ort::IntoTensorElementType + Debug + Zero + Clone + 'static>(
-    tensor: ort::Tensor<T>,
-) -> ort::Result<ort::Tensor<T>> {
-    let (mut shape, data) = tensor.try_extract_raw_tensor()?;
-    shape[0] *= 2;
-    let data = [data.to_vec(), vec![T::zero(); data.len()]].concat();
-    ort::Tensor::from_array((shape, data))
-}

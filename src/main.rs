@@ -22,6 +22,9 @@ mod music_gen_config;
 mod music_gen_inputs;
 mod music_gen_outputs;
 mod storage;
+mod music_gen_text_encoder;
+mod music_gen_audio_encodec;
+mod tensor_ops;
 
 #[derive(Clone, ValueEnum)]
 enum Model {
