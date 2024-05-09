@@ -33,7 +33,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
         # https://github.com/Spotifyd/spotifyd/issues/659#issuecomment-737730954
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
@@ -46,7 +45,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
           packages: librust-alsa-sys-dev
@@ -58,7 +56,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
           packages: librust-alsa-sys-dev
@@ -74,7 +71,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - uses: actions/cache@v4
         with:
           path: $HOME/Library/Caches/ort.pyke.io # <- onnxruntime libs are placed here by ort
@@ -86,7 +82,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
 #      - uses: actions/cache@v4
 #        with:
 #          path: TODO: Where are pyke files located
@@ -108,7 +103,6 @@ jobs:
           fetch-depth: '0' # https://github.com/actions/checkout/issues/217
 
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - run: cargo install cargo-release
       - name: Bump versions
         run: |
@@ -137,7 +131,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
       - uses: awalsh128/cache-apt-pkgs-action@latest
         with:
           packages: librust-alsa-sys-dev
