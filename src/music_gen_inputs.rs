@@ -37,6 +37,10 @@ impl MusicGenInputs {
             .insert("encoder_hidden_states".to_string(), v.try_into()?);
         Ok(())
     }
+    
+    pub fn remove_encoder_hidden_states(&mut self) {
+        self.inputs.remove("encoder_hidden_states");
+    }
 
     pub fn past_key_value_decoder_key<T, E>(&mut self, i: usize, v: T) -> Result<(), E>
     where

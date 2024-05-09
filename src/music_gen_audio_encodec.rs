@@ -1,3 +1,4 @@
+use half::f16;
 use ndarray::{Array, Axis};
 use tokio::sync::mpsc::Receiver;
 
@@ -42,13 +43,30 @@ impl MusicGenAudioEncodec {
             .expect("audio_values not found in output");
 
         let (tx, rx) = tokio::sync::mpsc::channel(100);
-        tokio::spawn(async move {
-            let (_, data) = audio_values.try_extract_raw_tensor()?;
-            for sample in data {
-                let _ = tx.send(Ok(*sample)).await;
+        let tx2 = tx.clone();
+
+        let future = async move {
+            if let Ok((_, data)) = audio_values.try_extract_raw_tensor::<f32>() {
+                for sample in data {
+                    let _ = tx.send(Ok(*sample)).await;
+                }
+                return Ok(());
+            }
+            if let Ok((_, data)) = audio_values.try_extract_raw_tensor::<f16>() {
+                for sample in data {
+                    let _ = tx.send(Ok(f32::from(*sample))).await;
+                }
+                return Ok(());
             }
             Ok::<(), ort::Error>(())
+        };
+
+        tokio::spawn(async move {
+            if let Err(err) = future.await {
+                let _ = tx2.send(Err(err)).await;
+            };
         });
+
         Ok(rx)
     }
 }

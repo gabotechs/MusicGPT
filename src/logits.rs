@@ -1,3 +1,4 @@
+use half::f16;
 use std::fmt::{Debug, Formatter};
 use std::ops::{Deref, DerefMut};
 
@@ -56,7 +57,13 @@ impl Debug for Logits {
 
 impl Logits {
     pub fn from_3d_dyn_value(value: &ort::DynValue) -> ort::Result<Self> {
-        let arr = value.try_extract_tensor::<f32>()?.into_owned();
+        let arr = if let Ok(res) = value.try_extract_tensor::<f32>() {
+            res.into_owned()
+        } else {
+            let arr = value.try_extract_tensor::<f16>()?;
+            arr.mapv(f32::from)
+        };
+            
         let arr = arr
             .into_dimensionality::<Ix3>()
             .expect("Expected 3 dimensions");

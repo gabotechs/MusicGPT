@@ -2,7 +2,7 @@ use std::fmt::Write;
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
-use indicatif::{MultiProgress, ProgressBar, ProgressFinish, ProgressState, ProgressStyle};
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle};
 
 pub struct LoadingBarFactor;
 
@@ -85,20 +85,30 @@ impl LoadingBarFactor {
     }
 
     pub fn download_bar(file: &str) -> Bar {
-        let pb = ProgressBar::new(1);
+        const NAME_LEN: usize = 32;
+        const NAME_SHIFT_INTERVAL: usize = 300;
+        let pb = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr());
+        let file_string = file.to_string();
         pb.set_style(
             ProgressStyle::with_template(
-                &format!("{file} {{spinner:.green}} [{{wide_bar:.cyan/blue}}] {{bytes}}/{{total_bytes}} ({{bytes_per_sec}}, {{eta}})")
+                "{file:>32} {spinner:.green} [{wide_bar:.cyan/blue}] {bytes}/{total_bytes}",
             )
-                .unwrap()
-                .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
-                    write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
-                })
-                .progress_chars("#>-"),
+            .unwrap()
+            .with_key("file", move |state: &ProgressState, w: &mut dyn Write| {
+                if file_string.len() > NAME_LEN {
+                    let el = state.elapsed().as_millis() as usize;
+                    let offset = (el / NAME_SHIFT_INTERVAL) % (file_string.len() - NAME_LEN + 1);
+                    let view = &file_string[offset..offset + NAME_LEN];
+                    write!(w, "{view: >w$}", w = NAME_LEN).unwrap();
+                } else {
+                    write!(w, "{file_string: >w$}", w = NAME_LEN).unwrap();
+                }
+            })
+            .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
+                write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
+            })
+            .progress_chars("#>-"),
         );
-        let pb = pb.with_finish(ProgressFinish::WithMessage(
-            format!("{file} downloaded").into(),
-        ));
         Bar(pb)
     }
 }

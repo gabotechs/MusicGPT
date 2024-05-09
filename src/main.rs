@@ -1,7 +1,9 @@
 use std::collections::VecDeque;
 use std::error::Error;
+use std::path::PathBuf;
 
 use clap::{Parser, ValueEnum};
+use half::f16;
 use ort::{
     CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
     TensorRTExecutionProvider,
@@ -10,7 +12,8 @@ use tokio::sync::mpsc::Receiver;
 
 use crate::audio_manager::AudioManager;
 use crate::loading_bar_factory::LoadingBarFactor;
-use crate::music_gen::{MusicGen, MusicGenLoadOptions, MusicGenType};
+use crate::music_gen::{MusicGen, MusicGenMergedLoadOptions, MusicGenSplitLoadOptions};
+use crate::music_gen_decoder::{MusicGenMergedDecoder, MusicGenSplitDecoder, MusicGenType};
 use crate::storage::Storage;
 
 mod audio_manager;
@@ -18,19 +21,23 @@ mod delay_pattern_mask_ids;
 mod loading_bar_factory;
 mod logits;
 mod music_gen;
+mod music_gen_audio_encodec;
 mod music_gen_config;
+mod music_gen_decoder;
 mod music_gen_inputs;
 mod music_gen_outputs;
-mod storage;
 mod music_gen_text_encoder;
-mod music_gen_audio_encodec;
+mod storage;
 mod tensor_ops;
 
-#[derive(Clone, ValueEnum)]
+#[derive(Clone, Copy, ValueEnum)]
 enum Model {
     Small,
+    SmallFp16,
     SmallQuant,
     Medium,
+    MediumQuant,
+    MediumFp16,
     Large,
 }
 
@@ -41,10 +48,13 @@ struct Args {
     #[arg(long, default_value = "10")]
     secs: usize,
 
-    #[arg(long, default_value = "small-quant")]
+    #[arg(long, default_value = "small")]
     model: Model,
 
-    #[arg(long, default_value = "")]
+    #[arg(long, default_value = "false")]
+    use_merged: bool,
+
+    #[arg(long, default_value = "musicgpt-generated.wav")]
     output: String,
 
     #[arg(long, default_value = "false")]
@@ -57,9 +67,29 @@ struct Args {
     no_playback: bool,
 }
 
+fn invalid_arg(msg: &str) -> Result<(), Box<dyn Error>> {
+    Err(Box::new(std::io::Error::new(
+        std::io::ErrorKind::Other,
+        msg,
+    )))
+}
+
+impl Args {
+    fn validate(&self) -> Result<(), Box<dyn Error>> {
+        if self.secs < 1 {
+            return invalid_arg("--secs must > 0");
+        }
+        if self.secs > 30 {
+            return invalid_arg("--secs must <= 30");
+        }
+        Ok(())
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
+    args.validate()?;
 
     if args.gpu {
         println!("WARNING: GPU support is experimental, it might not work on most platforms");
@@ -78,12 +108,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         ort::init().commit()?;
     };
 
-    async fn gen_stream<T: MusicGenType + 'static>(
-        opts: MusicGenLoadOptions,
+    async fn split_stream<T: MusicGenType + 'static>(
+        opts: MusicGenSplitLoadOptions,
         args: &Args,
     ) -> ort::Result<Receiver<ort::Result<f32>>> {
         let spinner = LoadingBarFactor::spinner("Loading models");
-        let music_gen = MusicGen::<T>::load(opts).await?;
+        let music_gen = MusicGen::<MusicGenSplitDecoder<T>>::load(opts).await?;
         spinner.finish_and_clear();
         let bar = LoadingBarFactor::bar("Generating audio");
         music_gen
@@ -93,19 +123,67 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .await
     }
 
-    let opts = model_to_music_gen_load_opts(&args).await?;
-    let mut sample_stream = match args.model {
-        Model::Small => gen_stream::<f32>(opts, &args),
-        Model::Medium => gen_stream::<f32>(opts, &args),
-        Model::Large => gen_stream::<f32>(opts, &args),
-        // Surprisingly, the quantized model also used f32 for inputs and outputs.
-        Model::SmallQuant => gen_stream::<f32>(opts, &args),
+    async fn merged_stream<T: MusicGenType + 'static>(
+        opts: MusicGenMergedLoadOptions,
+        args: &Args,
+    ) -> ort::Result<Receiver<ort::Result<f32>>> {
+        let spinner = LoadingBarFactor::spinner("Loading models");
+        let music_gen = MusicGen::<MusicGenMergedDecoder<T>>::load(opts).await?;
+        spinner.finish_and_clear();
+        let bar = LoadingBarFactor::bar("Generating audio");
+        music_gen
+            .generate(&args.prompt, args.secs, |el, t| {
+                bar.update_elapsed_total(el, t)
+            })
+            .await
     }
-    .await?;
 
-    let output = if args.output.is_empty() {
-        "musicgpt-generated.wav".to_string()
-    } else if !args.output.ends_with(".wav") {
+    let mut sample_stream = match (args.model, args.use_merged) {
+        (Model::Small, true) => {
+            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+        }
+        (Model::Small, false) => {
+            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+        }
+        (Model::SmallQuant, true) => {
+            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+        }
+        (Model::SmallQuant, false) => {
+            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+        }
+        (Model::SmallFp16, true) => {
+            merged_stream::<f16>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+        }
+        (Model::SmallFp16, false) => {
+            split_stream::<f16>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+        }
+        (Model::Medium, true) => {
+            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+        }
+        (Model::Medium, false) => {
+            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+        }
+        (Model::MediumQuant, true) => {
+            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+        }
+        (Model::MediumQuant, false) => {
+            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+        }
+        (Model::MediumFp16, true) => {
+            merged_stream::<f16>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+        }
+        (Model::MediumFp16, false) => {
+            split_stream::<f16>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+        }
+        (Model::Large, true) => {
+            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+        }
+        (Model::Large, false) => {
+            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+        }
+    }?;
+
+    let output = if !args.output.ends_with(".wav") {
         args.output + ".wav"
     } else {
         args.output
@@ -133,83 +211,186 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-// These constants reflect a 1:1 what's present in the https://huggingface.co/gabotechs/music_gen
-// repo. Even if they have different URLs, a lot of the files turn out to be the same, like the
-// tokenizers, de encodec_decode.onnx model and the text_encoder.onnx model.
-#[rustfmt::skip]
-mod urls {
-    pub const CONFIG_SMALL: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_small/config.json";
-    pub const TOKENIZER_JSON_SMALL: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_small/tokenizer.json";
-    pub const TEXT_ENCODER_SMALL: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_small/text_encoder.onnx";
-    pub const DECODER_SMALL: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_small/decoder_model_merged.onnx";
-    pub const DECODER_SMALL_QUANTIZED: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_small/decoder_model_merged_quantized.onnx";
-    pub const ENCODEC_DECODE_SMALL: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_small/encodec_decode.onnx";
-
-    pub const CONFIG_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/config.json";
-    pub const TOKENIZER_JSON_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/tokenizer.json";
-    pub const TEXT_ENCODER_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/text_encoder.onnx";
-    pub const DECODER_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/decoder_model_merged.onnx";
-    pub const DECODER_DATA_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/decoder_model_merged.onnx_data";
-    pub const ENCODEC_DECODE_MEDIUM: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_medium/encodec_decode.onnx";
-
-    pub const CONFIG_LARGE: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_large/config.json";
-    pub const TOKENIZER_JSON_LARGE: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_large/tokenizer.json";
-    pub const TEXT_ENCODER_LARGE: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_large/text_encoder.onnx";
-    pub const DECODER_LARGE: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_large/decoder_model_merged.onnx";
-    pub const DECODER_DATA_LARGE: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_large/decoder_model_merged.onnx_data";
-    pub const ENCODEC_DECODE_LARGE: &str = "https://huggingface.co/gabotechs/music_gen/resolve/main/musicgen_onnx_large/encodec_decode.onnx";
+macro_rules! hf_url {
+    ($t: expr) => {
+        (
+            concat!(
+                "https://huggingface.co/gabotechs/music_gen/resolve/main/",
+                $t
+            ),
+            concat!("v1/", $t,),
+        )
+    };
 }
 
-async fn model_to_music_gen_load_opts(args: &Args) -> Result<MusicGenLoadOptions, Box<dyn Error>> {
+fn model_not_available<T>() -> Result<T, Box<dyn Error>> {
+    Err(Box::new(std::io::Error::new(
+        std::io::ErrorKind::NotFound,
+        "Model not available",
+    )))
+}
+
+async fn model_to_music_gen_merged_load_opts(
+    args: &Args,
+) -> Result<MusicGenMergedLoadOptions, Box<dyn Error>> {
     // Note that here some destination paths are exactly the same no matter the model.
     // This is because files are exactly the same, and if someone tried model "small",
     // we do not want to force them to re-download repeated files. The following files
     // are the same independently of the model:
-    // - tokenizer_json.json
+    // - tokenizer.json
     // - text_encoder.onnx
     // - encodec_decode.onnx
     // That's why they are not prefixed by the model size. Files prefix by the model size
     // do vary depending on the model.
-    #[rustfmt::skip]
-        let remote_file_spec = match args.model {
+    let remote_file_spec = match args.model {
         Model::Small => vec![
-            (urls::CONFIG_SMALL, "v1/small/config.json"),
-            (urls::TOKENIZER_JSON_SMALL, "v1/tokenizer_json.json"),
-            (urls::TEXT_ENCODER_SMALL, "v1/text_encoder.onnx"),
-            (urls::DECODER_SMALL, "v1/small/decoder_model_merged.onnx"),
-            (urls::ENCODEC_DECODE_SMALL, "v1/encodec_decode.onnx"),
+            hf_url!("small/config.json"),
+            hf_url!("small/tokenizer.json"),
+            hf_url!("small_fp32/text_encoder.onnx"),
+            hf_url!("small_fp32/decoder_model_merged.onnx"),
+            hf_url!("small_fp32/encodec_decode.onnx"),
         ],
         Model::SmallQuant => vec![
-            (urls::CONFIG_SMALL, "v1/small/config.json"),
-            (urls::TOKENIZER_JSON_SMALL, "v1/tokenizer_json.json"),
-            (urls::TEXT_ENCODER_SMALL, "v1/text_encoder.onnx"),
-            (urls::DECODER_SMALL_QUANTIZED, "v1/small/decoder_model_merged_quantized.onnx"),
-            (urls::ENCODEC_DECODE_SMALL, "v1/encodec_decode.onnx"),
+            hf_url!("small/config.json"),
+            hf_url!("small/tokenizer.json"),
+            hf_url!("small_fp32/text_encoder.onnx"),
+            hf_url!("small_i8/decoder_model_merged.onnx"),
+            hf_url!("small_fp32/decoder_model_merged.onnx"),
+        ],
+        Model::SmallFp16 => vec![
+            hf_url!("small/config.json"),
+            hf_url!("small/tokenizer.json"),
+            hf_url!("small_fp16/text_encoder.onnx"),
+            hf_url!("small_fp16/decoder_model_merged.onnx"),
+            hf_url!("small_fp16/decoder_model_merged.onnx"),
         ],
         Model::Medium => vec![
-            (urls::CONFIG_MEDIUM, "v1/medium/config.json"),
-            (urls::TOKENIZER_JSON_MEDIUM, "v1/tokenizer_json.json"),
-            (urls::TEXT_ENCODER_MEDIUM, "v1/text_encoder.onnx"),
-            (urls::DECODER_MEDIUM, "v1/medium/decoder_model_merged.onnx"),
-            (urls::ENCODEC_DECODE_MEDIUM, "v1/encodec_decode.onnx"),
+            hf_url!("medium/config.json"),
+            hf_url!("medium/tokenizer.json"),
+            hf_url!("medium_fp32/text_encoder.onnx"),
+            hf_url!("medium_fp32/decoder_model_merged.onnx"),
+            hf_url!("medium_fp32/encodec_decode.onnx"),
             // Files below will just be downloaded,
-            (urls::DECODER_DATA_MEDIUM, "v1/medium/decoder_model_merged.onnx_data"),
+            hf_url!("medium_fp32/decoder_model_merged.onnx_data"),
+        ],
+        Model::MediumQuant => return model_not_available(),
+        Model::MediumFp16 => vec![
+            hf_url!("medium/config.json"),
+            hf_url!("medium/tokenizer.json"),
+            hf_url!("medium_fp16/text_encoder.onnx"),
+            hf_url!("medium_fp16/decoder_model_merged.onnx"),
+            hf_url!("medium_fp16/encodec_decode.onnx"),
+            // Files below will just be downloaded,
+            hf_url!("medium_fp16/decoder_model_merged.onnx_data"),
         ],
         Model::Large => vec![
-            (urls::CONFIG_LARGE, "v1/large/config.json"),
-            (urls::TOKENIZER_JSON_LARGE, "v1/tokenizer_json.json"),
-            (urls::TEXT_ENCODER_LARGE, "v1/text_encoder.onnx"),
-            (urls::DECODER_LARGE, "v1/large/decoder_model_merged.onnx"),
-            (urls::ENCODEC_DECODE_LARGE, "v1/encodec_decode.onnx"),
+            hf_url!("large/config.json"),
+            hf_url!("large/tokenizer.json"),
+            hf_url!("large_fp32/text_encoder.onnx"),
+            hf_url!("large_fp32/decoder_model_merged.onnx"),
+            hf_url!("large_fp32/encodec_decode.onnx"),
             // Files below will just be downloaded,
-            (urls::DECODER_DATA_LARGE, "v1/large/decoder_model_merged.onnx_data"),
+            hf_url!("large_fp32/decoder_model_merged.onnx_data"),
         ],
     };
 
-    let mut longest_name = 0;
-    let mut has_to_download = args.force_download;
+    let mut results = download(remote_file_spec, args.force_download).await?;
+
+    Ok(MusicGenMergedLoadOptions {
+        config: results.pop_front().unwrap(),
+        tokenizer: results.pop_front().unwrap(),
+        text_encoder: results.pop_front().unwrap(),
+        decoder_model_merged: results.pop_front().unwrap(),
+        audio_encodec_decode: results.pop_front().unwrap(),
+    })
+}
+
+async fn model_to_music_gen_split_load_opts(
+    args: &Args,
+) -> Result<MusicGenSplitLoadOptions, Box<dyn Error>> {
+    let remote_file_spec = match args.model {
+        Model::Small => vec![
+            hf_url!("small/config.json"),
+            hf_url!("small/tokenizer.json"),
+            hf_url!("small_fp32/text_encoder.onnx"),
+            hf_url!("small_fp32/decoder_model.onnx"),
+            hf_url!("small_fp32/decoder_with_past_model.onnx"),
+            hf_url!("small_fp32/encodec_decode.onnx"),
+        ],
+        Model::SmallQuant => vec![
+            hf_url!("small/config.json"),
+            hf_url!("small/tokenizer.json"),
+            hf_url!("small_fp32/text_encoder.onnx"),
+            hf_url!("small_i8/decoder_model.onnx"),
+            hf_url!("small_i8/decoder_with_past_model.onnx"),
+            hf_url!("small_fp32/encodec_decode.onnx"),
+        ],
+        Model::SmallFp16 => vec![
+            hf_url!("small/config.json"),
+            hf_url!("small/tokenizer.json"),
+            hf_url!("small_fp16/text_encoder.onnx"),
+            hf_url!("small_fp16/decoder_model.onnx"),
+            hf_url!("small_fp16/decoder_with_past_model.onnx"),
+            hf_url!("small_fp16/encodec_decode.onnx"),
+        ],
+        Model::Medium => vec![
+            hf_url!("medium/config.json"),
+            hf_url!("medium/tokenizer.json"),
+            hf_url!("medium_fp32/text_encoder.onnx"),
+            hf_url!("medium_fp32/decoder_model.onnx"),
+            hf_url!("medium_fp32/decoder_with_past_model.onnx"),
+            hf_url!("medium_fp32/encodec_decode.onnx"),
+            // Files below will just be downloaded,
+            hf_url!("medium_fp32/decoder_model.onnx_data"),
+            hf_url!("medium_fp32/decoder_with_past_model.onnx_data"),
+        ],
+        Model::MediumQuant => vec![
+            hf_url!("medium/config.json"),
+            hf_url!("medium/tokenizer.json"),
+            hf_url!("medium_fp32/text_encoder.onnx"),
+            hf_url!("medium_i8/decoder_model.onnx"),
+            hf_url!("medium_i8/decoder_with_past_model.onnx"),
+            hf_url!("medium_fp32/encodec_decode.onnx"),
+        ],
+        Model::MediumFp16 => vec![
+            hf_url!("medium/config.json"),
+            hf_url!("medium/tokenizer.json"),
+            hf_url!("medium_fp16/text_encoder.onnx"),
+            hf_url!("medium_fp16/decoder_model.onnx"),
+            hf_url!("medium_fp16/decoder_with_past_model.onnx"),
+            hf_url!("medium_fp16/encodec_decode.onnx"),
+        ],
+        Model::Large => vec![
+            hf_url!("large/config.json"),
+            hf_url!("large/tokenizer.json"),
+            hf_url!("large_fp32/text_encoder.onnx"),
+            hf_url!("large_fp32/decoder_model.onnx"),
+            hf_url!("large_fp32/decoder_with_past_model.onnx"),
+            hf_url!("large_fp32/encodec_decode.onnx"),
+            // Files below will just be downloaded,
+            hf_url!("large_fp32/decoder_model.onnx_data"),
+            hf_url!("large_fp32/decoder_with_past_model.onnx_data"),
+        ],
+    };
+
+    let mut results = download(remote_file_spec, args.force_download).await?;
+
+    Ok(MusicGenSplitLoadOptions {
+        config: results.pop_front().unwrap(),
+        tokenizer: results.pop_front().unwrap(),
+        text_encoder: results.pop_front().unwrap(),
+        decoder_model: results.pop_front().unwrap(),
+        decoder_with_past_model: results.pop_front().unwrap(),
+        audio_encodec_decode: results.pop_front().unwrap(),
+    })
+}
+
+async fn download(
+    remote_file_spec: Vec<(&'static str, &'static str)>,
+    force_download: bool,
+) -> Result<VecDeque<PathBuf>, Box<dyn Error>> {
+    let mut has_to_download = force_download;
     for (_, local_filename) in remote_file_spec.iter() {
-        longest_name = longest_name.max(local_filename.len());
         has_to_download = has_to_download || !Storage::exists(local_filename).await?
     }
 
@@ -219,12 +400,11 @@ async fn model_to_music_gen_load_opts(args: &Args) -> Result<MusicGenLoadOptions
     let m = LoadingBarFactor::multi();
     let mut tasks = vec![];
     for (remote_file, local_filename) in remote_file_spec {
-        let name = format!("{local_filename: <width$}", width = longest_name);
-        let bar = m.add(LoadingBarFactor::download_bar(&name));
+        let bar = m.add(LoadingBarFactor::download_bar(local_filename));
         tasks.push(tokio::spawn(Storage::remote_data_file(
             remote_file,
             local_filename,
-            args.force_download,
+            force_download,
             move |el, t| bar.update_elapsed_total(el, t),
         )));
     }
@@ -233,12 +413,5 @@ async fn model_to_music_gen_load_opts(args: &Args) -> Result<MusicGenLoadOptions
         results.push_back(task.await??);
     }
     m.clear()?;
-
-    Ok(MusicGenLoadOptions {
-        config: results.pop_front().unwrap(),
-        tokenizer: results.pop_front().unwrap(),
-        text_encoder: results.pop_front().unwrap(),
-        decoder_model_merged: results.pop_front().unwrap(),
-        audio_encodec_decode: results.pop_front().unwrap(),
-    })
+    Ok(results)
 }
