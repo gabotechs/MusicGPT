@@ -28,15 +28,11 @@ cpal = "0.15.3"
 ort = { version = "2.0.0-rc.2" , features = ["half"]}
 half = { version = "2.4.1", features = ["num-traits"] }
 lazy_static = "1.4.0"
+tracing-subscriber = { version = "0.3.18", features = [ "env-filter", "fmt" ] }
 
-# TODO: Creating a statically compiled version with CUDA support is a huge mess,
-#  and distributing shared libraries for supporting cuda is also a huge mess.
-#  I don't know how to do this properly, I need help 😭
-#[target.'cfg(target_os = "windows")'.dependencies]
-#ort = { version = "2.0.0-rc.2", features = ["cuda"] }
-#[target.'cfg(target_os = "linux")'.dependencies]
-#ort = { version = "2.0.0-rc.2", features = ["cuda"] }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-ort = { version = "2.0.0-rc.2", features = ["coreml", "half"] }
+[features]
+default = []
+directml = ["ort/directml"]
+tensorrt = ["ort/tensorrt"]
+cuda = ["ort/cuda"]
 

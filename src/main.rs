@@ -5,8 +5,7 @@ use std::path::PathBuf;
 use clap::{Parser, ValueEnum};
 use half::f16;
 use ort::{
-    CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
-    TensorRTExecutionProvider,
+    CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider, TensorRTExecutionProvider,
 };
 use tokio::sync::mpsc::Receiver;
 
@@ -67,7 +66,7 @@ struct Args {
     no_playback: bool,
 }
 
-fn invalid_arg(msg: &str) -> Result<(), Box<dyn Error>> {
+fn io_err(msg: &str) -> Result<(), Box<dyn Error>> {
     Err(Box::new(std::io::Error::new(
         std::io::ErrorKind::Other,
         msg,
@@ -77,10 +76,10 @@ fn invalid_arg(msg: &str) -> Result<(), Box<dyn Error>> {
 impl Args {
     fn validate(&self) -> Result<(), Box<dyn Error>> {
         if self.secs < 1 {
-            return invalid_arg("--secs must > 0");
+            return io_err("--secs must > 0");
         }
         if self.secs > 30 {
-            return invalid_arg("--secs must <= 30");
+            return io_err("--secs must <= 30");
         }
         Ok(())
     }
@@ -88,25 +87,14 @@ impl Args {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    tracing_subscriber::fmt::init();
     let args = Args::parse();
     args.validate()?;
 
     if args.gpu {
         println!("WARNING: GPU support is experimental, it might not work on most platforms");
-        ort::init()
-            .with_execution_providers([
-                // Prefer TensorRT over CUDA.
-                TensorRTExecutionProvider::default().build(),
-                CUDAExecutionProvider::default().build(),
-                // Use DirectML on Windows if NVIDIA EPs are not available
-                DirectMLExecutionProvider::default().build(),
-                // Or use ANE on Apple platforms
-                CoreMLExecutionProvider::default().build(),
-            ])
-            .commit()?;
-    } else {
-        ort::init().commit()?;
-    };
+        init_gpu()?;
+    }
 
     async fn split_stream<T: MusicGenType + 'static>(
         opts: MusicGenSplitLoadOptions,
@@ -208,6 +196,38 @@ async fn main() -> Result<(), Box<dyn Error>> {
         spinner.finish_and_clear();
     }
 
+    Ok(())
+}
+
+fn init_gpu() -> Result<(), Box<dyn Error>> {
+    let mut providers = vec![];
+
+    if cfg!(feature = "tensorrt") {
+        providers.push(TensorRTExecutionProvider::default().build());
+    }
+    if cfg!(feature = "cuda") {
+        providers.push(CUDAExecutionProvider::default().build());
+    }
+    if cfg!(feature = "coreml") {
+        providers.push(CoreMLExecutionProvider::default().build());
+    }
+
+    let dummy_builder = ort::Session::builder()?;
+    for provider in providers.iter() {
+        if let Err(err) = provider.register(&dummy_builder) {
+            println!("Could not load {}: {}", provider.as_str(), err);
+        } else {
+            println!("{} detected", provider.as_str());
+        }
+    }
+
+    if providers.is_empty() {
+        return io_err(
+            "No hardware accelerator was detected, try running the program without the --gpu flag",
+        );
+    }
+
+    ort::init().with_execution_providers(providers).commit()?;
     Ok(())
 }
 
