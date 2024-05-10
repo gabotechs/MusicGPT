@@ -52,17 +52,17 @@ struct Args {
     secs: usize,
 
     /// The model to use. Some models are experimental, for example quantized models
-    /// have a degraded quality and fp16 models are very slow. 
+    /// have a degraded quality and fp16 models are very slow.
     /// Beware of large models, you will need really powerful hardware for those.
     #[arg(long, default_value = "small")]
     model: Model,
 
-    /// The LLM models are exported using https://github.com/huggingface/optimum, 
+    /// The LLM models are exported using https://github.com/huggingface/optimum,
     /// and they export transformer-based decoders either in two files, or a single
     /// merged one.
     #[arg(long, default_value = "false")]
     use_split_decoder: bool,
-    
+
     /// Output path for the resulting .wav file
     #[arg(long, default_value = "musicgpt-generated.wav")]
     output: String,
@@ -476,8 +476,7 @@ async fn build_sessions(
             format!("Loading {:?}...", file.file_name().unwrap_or_default()).as_str(),
         );
 
-        let result = ort::Session::builder()?
-            .commit_from_file(file)?;
+        let result = ort::Session::builder()?.commit_from_file(file)?;
         bar.finish_and_clear();
         results.push_back(result);
     }
