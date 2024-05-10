@@ -309,7 +309,13 @@ async fn model_to_music_gen_merged_load_opts(
             // Files below will just be downloaded,
             hf_url!("medium_fp32/decoder_model_merged.onnx_data"),
         ],
-        Model::MediumQuant => return model_not_available(),
+        Model::MediumQuant => vec![
+            hf_url!("medium/config.json"),
+            hf_url!("medium/tokenizer.json"),
+            hf_url!("medium_fp32/text_encoder.onnx"),
+            hf_url!("medium_fpi8/decoder_model_merged.onnx"),
+            hf_url!("medium_fpi8/encodec_decode.onnx"),
+        ],
         Model::MediumFp16 => vec![
             hf_url!("medium/config.json"),
             hf_url!("medium/tokenizer.json"),
