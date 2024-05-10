@@ -168,7 +168,7 @@ jobs:
         with:
           packages: librust-alsa-sys-dev
           version: 1.0
-      - run: cargo build --release
+      - run: cargo build --release --features cuda
       - run: ./.github/bundle-release.sh x86_64-unknown-linux-gnu
       - run: gh release upload v${{ needs.tag.outputs.version }} x86_64-unknown-linux-gnu.tar.gz
 
