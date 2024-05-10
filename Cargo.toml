@@ -5,6 +5,7 @@ version = "0.1.32"
 edition = "2021"
 description = "Generate music samples from natural language prompt locally with your own computer"
 keywords = ["llm", "music", "audio", "ai"]
+repository = "https://github.com/gabotechs/MusicGPT"
 
 [dependencies]
 openssl = { version = "0.10.59", features = ["vendored"] } # NOTE: neeeded for cross compilations
