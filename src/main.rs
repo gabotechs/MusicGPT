@@ -291,14 +291,14 @@ async fn model_to_music_gen_merged_load_opts(
             hf_url!("small/tokenizer.json"),
             hf_url!("small_fp32/text_encoder.onnx"),
             hf_url!("small_i8/decoder_model_merged.onnx"),
-            hf_url!("small_fp32/decoder_model_merged.onnx"),
+            hf_url!("small_fp32/encodec_decode.onnx"),
         ],
         Model::SmallFp16 => vec![
             hf_url!("small/config.json"),
             hf_url!("small/tokenizer.json"),
             hf_url!("small_fp16/text_encoder.onnx"),
             hf_url!("small_fp16/decoder_model_merged.onnx"),
-            hf_url!("small_fp16/decoder_model_merged.onnx"),
+            hf_url!("small_fp16/encodec_decode.onnx"),
         ],
         Model::Medium => vec![
             hf_url!("medium/config.json"),
