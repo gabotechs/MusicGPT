@@ -273,8 +273,8 @@ async fn merged_opts(args: &Args) -> Result<MusicGenMergedLoadOptions, Box<dyn E
             hf_url!("medium/config.json"),
             hf_url!("medium/tokenizer.json"),
             hf_url!("medium_fp32/text_encoder.onnx"),
-            hf_url!("medium_fpi8/decoder_model_merged.onnx"),
-            hf_url!("medium_fpi8/encodec_decode.onnx"),
+            hf_url!("medium_i8/decoder_model_merged.onnx"),
+            hf_url!("medium_fp32/encodec_decode.onnx"),
         ],
         Model::MediumFp16 => vec![
             hf_url!("medium/config.json"),
