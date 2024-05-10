@@ -41,27 +41,41 @@ enum Model {
 }
 
 #[derive(Parser)]
+#[command(name = "MusicGPT")]
+#[command(version, about, long_about = None)]
 struct Args {
+    /// The prompt for the LLM.
     prompt: String,
 
+    /// The length of the audio will be generated in seconds.
     #[arg(long, default_value = "10")]
     secs: usize,
 
+    /// The model to use. Some models are experimental, for example quantized models
+    /// have a degraded quality and fp16 models are very slow. 
+    /// Beware of large models, you will need really powerful hardware for those.
     #[arg(long, default_value = "small")]
     model: Model,
 
+    /// The LLM models are exported using https://github.com/huggingface/optimum, 
+    /// and they export transformer-based decoders either in two files, or a single
+    /// merged one.
     #[arg(long, default_value = "false")]
-    use_merged: bool,
-
+    use_split_decoder: bool,
+    
+    /// Output path for the resulting .wav file
     #[arg(long, default_value = "musicgpt-generated.wav")]
     output: String,
 
+    /// Force the download of LLM models
     #[arg(long, default_value = "false")]
     force_download: bool,
 
+    /// Use the device's GPU for inference if available. GPU support is experimental.
     #[arg(long, default_value = "false")]
     gpu: bool,
 
+    /// Do not play the audio automatically after inference.
     #[arg(long, default_value = "false")]
     no_playback: bool,
 }
@@ -126,47 +140,47 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .await
     }
 
-    let mut sample_stream = match (args.model, args.use_merged) {
-        (Model::Small, true) => {
-            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
-        }
+    let mut sample_stream = match (args.model, args.use_split_decoder) {
         (Model::Small, false) => {
-            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
-        }
-        (Model::SmallQuant, true) => {
             merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+        }
+        (Model::Small, true) => {
+            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
         }
         (Model::SmallQuant, false) => {
-            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
         }
-        (Model::SmallFp16, true) => {
-            merged_stream::<f16>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+        (Model::SmallQuant, true) => {
+            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
         }
         (Model::SmallFp16, false) => {
-            split_stream::<f16>(model_to_music_gen_split_load_opts(&args).await?, &args).await
-        }
-        (Model::Medium, true) => {
-            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
-        }
-        (Model::Medium, false) => {
-            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
-        }
-        (Model::MediumQuant, true) => {
-            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
-        }
-        (Model::MediumQuant, false) => {
-            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
-        }
-        (Model::MediumFp16, true) => {
             merged_stream::<f16>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
         }
-        (Model::MediumFp16, false) => {
+        (Model::SmallFp16, true) => {
             split_stream::<f16>(model_to_music_gen_split_load_opts(&args).await?, &args).await
         }
-        (Model::Large, true) => {
+        (Model::Medium, false) => {
             merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
         }
+        (Model::Medium, true) => {
+            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+        }
+        (Model::MediumQuant, false) => {
+            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+        }
+        (Model::MediumQuant, true) => {
+            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+        }
+        (Model::MediumFp16, false) => {
+            merged_stream::<f16>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+        }
+        (Model::MediumFp16, true) => {
+            split_stream::<f16>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+        }
         (Model::Large, false) => {
+            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+        }
+        (Model::Large, true) => {
             split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
         }
     }?;
@@ -200,24 +214,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 fn init_gpu() -> Result<(), Box<dyn Error>> {
-    let mut providers = vec![];
+    let mut candidates = vec![];
 
     if cfg!(feature = "tensorrt") {
-        providers.push(TensorRTExecutionProvider::default().build());
+        candidates.push(TensorRTExecutionProvider::default().build());
     }
     if cfg!(feature = "cuda") {
-        providers.push(CUDAExecutionProvider::default().build());
+        candidates.push(CUDAExecutionProvider::default().build());
     }
     if cfg!(feature = "coreml") {
-        providers.push(CoreMLExecutionProvider::default().build());
+        candidates.push(CoreMLExecutionProvider::default().with_ane_only().build());
     }
 
     let dummy_builder = ort::Session::builder()?;
-    for provider in providers.iter() {
+    let mut providers = vec![];
+    for provider in candidates.iter() {
         if let Err(err) = provider.register(&dummy_builder) {
             println!("Could not load {}: {}", provider.as_str(), err);
         } else {
             println!("{} detected", provider.as_str());
+            providers.push(provider)
         }
     }
 
@@ -227,7 +243,7 @@ fn init_gpu() -> Result<(), Box<dyn Error>> {
         );
     }
 
-    ort::init().with_execution_providers(providers).commit()?;
+    ort::init().with_execution_providers(candidates).commit()?;
     Ok(())
 }
 
@@ -316,12 +332,19 @@ async fn model_to_music_gen_merged_load_opts(
 
     let mut results = download(remote_file_spec, args.force_download).await?;
 
+    let config = results.pop_front().unwrap();
+    let tokenizer = results.pop_front().unwrap();
+    let mut sessions = build_sessions(results).await?;
+    let text_encoder = sessions.pop_front().unwrap();
+    let decoder_model_merged = sessions.pop_front().unwrap();
+    let audio_encodec_decode = sessions.pop_front().unwrap();
+
     Ok(MusicGenMergedLoadOptions {
-        config: results.pop_front().unwrap(),
-        tokenizer: results.pop_front().unwrap(),
-        text_encoder: results.pop_front().unwrap(),
-        decoder_model_merged: results.pop_front().unwrap(),
-        audio_encodec_decode: results.pop_front().unwrap(),
+        config,
+        tokenizer,
+        text_encoder,
+        decoder_model_merged,
+        audio_encodec_decode,
     })
 }
 
@@ -395,13 +418,21 @@ async fn model_to_music_gen_split_load_opts(
 
     let mut results = download(remote_file_spec, args.force_download).await?;
 
+    let config = results.pop_front().unwrap();
+    let tokenizer = results.pop_front().unwrap();
+    let mut sessions = build_sessions(results).await?;
+    let text_encoder = sessions.pop_front().unwrap();
+    let decoder_model = sessions.pop_front().unwrap();
+    let decoder_with_past_model = sessions.pop_front().unwrap();
+    let audio_encodec_decode = sessions.pop_front().unwrap();
+
     Ok(MusicGenSplitLoadOptions {
-        config: results.pop_front().unwrap(),
-        tokenizer: results.pop_front().unwrap(),
-        text_encoder: results.pop_front().unwrap(),
-        decoder_model: results.pop_front().unwrap(),
-        decoder_with_past_model: results.pop_front().unwrap(),
-        audio_encodec_decode: results.pop_front().unwrap(),
+        config,
+        tokenizer,
+        text_encoder,
+        decoder_model,
+        decoder_with_past_model,
+        audio_encodec_decode,
     })
 }
 
@@ -433,5 +464,22 @@ async fn download(
         results.push_back(task.await??);
     }
     m.clear()?;
+    Ok(results)
+}
+
+async fn build_sessions(
+    files: impl IntoIterator<Item = PathBuf>,
+) -> Result<VecDeque<ort::Session>, Box<dyn Error>> {
+    let mut results = VecDeque::new();
+    for file in files {
+        let bar = LoadingBarFactor::spinner(
+            format!("Loading {:?}...", file.file_name().unwrap_or_default()).as_str(),
+        );
+
+        let result = ort::Session::builder()?
+            .commit_from_file(file)?;
+        bar.finish_and_clear();
+        results.push_back(result);
+    }
     Ok(results)
 }

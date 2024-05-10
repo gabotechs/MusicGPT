@@ -3,10 +3,8 @@ name = "musicgpt"
 license = "MIT"
 version = "0.1.31"
 edition = "2021"
-description = "Generate music samples from natural language locally with your own computer"
+description = "Generate music samples from natural language prompt locally with your own computer"
 keywords = ["llm", "music", "audio", "ai"]
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 openssl = { version = "0.10.59", features = ["vendored"] } # NOTE: neeeded for cross compilations
@@ -32,7 +30,7 @@ tracing-subscriber = { version = "0.3.18", features = [ "env-filter", "fmt" ] }
 
 [features]
 default = []
-directml = ["ort/directml"]
+coreml = ["ort/coreml"]
 tensorrt = ["ort/tensorrt"]
 cuda = ["ort/cuda"]
 
