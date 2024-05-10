@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -19,6 +20,9 @@ pub struct MusicGen<D: MusicGenDecoder> {
     audio_encodec: MusicGenAudioEncodec,
     decoder: D,
 }
+
+unsafe impl<D: MusicGenDecoder> Send for MusicGen<D> {}
+unsafe impl<D: MusicGenDecoder> Sync for MusicGen<D> {}
 
 pub struct MusicGenMergedLoadOptions {
     pub tokenizer: PathBuf,
@@ -49,7 +53,7 @@ impl<T: MusicGenType + 'static> MusicGen<MusicGenMergedDecoder<T>> {
                 _phantom_data: PhantomData,
             },
             audio_encodec: MusicGenAudioEncodec {
-                audio_encodec_decode: Arc::new(opts.audio_encodec_decode),
+                audio_encodec_decode: opts.audio_encodec_decode,
             },
         })
     }
@@ -86,24 +90,35 @@ impl<T: MusicGenType + 'static> MusicGen<MusicGenSplitDecoder<T>> {
                 _phantom_data: PhantomData,
             },
             audio_encodec: MusicGenAudioEncodec {
-                audio_encodec_decode: Arc::new(opts.audio_encodec_decode),
+                audio_encodec_decode: opts.audio_encodec_decode,
             },
         })
     }
 }
 
-impl<D: MusicGenDecoder> MusicGen<D> {
-    pub fn generate<Cb: Fn(usize, usize) + Send + Sync + 'static>(
+#[async_trait]
+pub trait AudioSamplesGenerator {
+    async fn generate(
         &self,
         text: &str,
         secs: usize,
-        cb: Cb,
+        cb: Box<dyn Fn(usize, usize) + Send + Sync + 'static> ,
+    ) -> ort::Result<tokio::sync::mpsc::Receiver<ort::Result<f32>>>;
+}
+
+#[async_trait]
+impl<D: MusicGenDecoder> AudioSamplesGenerator for MusicGen<D> {
+    async fn generate(
+        &self,
+        text: &str,
+        secs: usize,
+        cb: Box<dyn Fn(usize, usize) + Send + Sync + 'static> ,
     ) -> ort::Result<tokio::sync::mpsc::Receiver<ort::Result<f32>>> {
         let max_len = secs * INPUT_IDS_BATCH_PER_SECOND;
         let (last_hidden_state, attention_mask) = self.text_encoder.encode(text)?;
         let generator = self
             .decoder
             .generate_tokens(last_hidden_state, attention_mask, max_len)?;
-        Ok(self.audio_encodec.encode(generator, max_len, cb))
+        self.audio_encodec.encode(generator, max_len, cb).await
     }
 }

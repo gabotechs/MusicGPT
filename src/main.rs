@@ -7,11 +7,12 @@ use half::f16;
 use ort::{
     CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider, TensorRTExecutionProvider,
 };
-use tokio::sync::mpsc::Receiver;
 
 use crate::audio_manager::AudioManager;
 use crate::loading_bar_factory::LoadingBarFactor;
-use crate::music_gen::{MusicGen, MusicGenMergedLoadOptions, MusicGenSplitLoadOptions};
+use crate::music_gen::{
+    MusicGen, AudioSamplesGenerator, MusicGenMergedLoadOptions, MusicGenSplitLoadOptions,
+};
 use crate::music_gen_decoder::{MusicGenMergedDecoder, MusicGenSplitDecoder, MusicGenType};
 use crate::storage::Storage;
 
@@ -110,76 +111,66 @@ async fn main() -> Result<(), Box<dyn Error>> {
         init_gpu()?;
     }
 
-    async fn split_stream<T: MusicGenType + 'static>(
+    async fn split<T: MusicGenType + 'static>(
         opts: MusicGenSplitLoadOptions,
-        args: &Args,
-    ) -> ort::Result<Receiver<ort::Result<f32>>> {
+    ) -> ort::Result<Box<dyn AudioSamplesGenerator>> {
         let spinner = LoadingBarFactor::spinner("Loading models");
         let music_gen = MusicGen::<MusicGenSplitDecoder<T>>::load(opts).await?;
         spinner.finish_and_clear();
-        let bar = LoadingBarFactor::bar("Generating audio");
-        music_gen
-            .generate(&args.prompt, args.secs, move |el, t| {
-                bar.update_elapsed_total(el, t)
-            })
+        Ok(Box::new(music_gen))
     }
 
-    async fn merged_stream<T: MusicGenType + 'static>(
+    async fn merged<T: MusicGenType + 'static>(
         opts: MusicGenMergedLoadOptions,
-        args: &Args,
-    ) -> ort::Result<Receiver<ort::Result<f32>>> {
+    ) -> ort::Result<Box<dyn AudioSamplesGenerator>> {
         let spinner = LoadingBarFactor::spinner("Loading models");
         let music_gen = MusicGen::<MusicGenMergedDecoder<T>>::load(opts).await?;
         spinner.finish_and_clear();
-        let bar = LoadingBarFactor::bar("Generating audio");
-        music_gen
-            .generate(&args.prompt, args.secs, move |el, t| {
-                bar.update_elapsed_total(el, t)
-            })
+        Ok(Box::new(music_gen))
     }
 
-    let mut sample_stream = match (args.model, args.use_split_decoder) {
+    let generate_audio = match (args.model, args.use_split_decoder) {
         (Model::Small, false) => {
-            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+            merged::<f32>(model_to_music_gen_merged_load_opts(&args).await?).await
         }
         (Model::Small, true) => {
-            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+            split::<f32>(model_to_music_gen_split_load_opts(&args).await?).await
         }
         (Model::SmallQuant, false) => {
-            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+            merged::<f32>(model_to_music_gen_merged_load_opts(&args).await?).await
         }
         (Model::SmallQuant, true) => {
-            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+            split::<f32>(model_to_music_gen_split_load_opts(&args).await?).await
         }
         (Model::SmallFp16, false) => {
-            merged_stream::<f16>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+            merged::<f16>(model_to_music_gen_merged_load_opts(&args).await?).await
         }
         (Model::SmallFp16, true) => {
-            split_stream::<f16>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+            split::<f16>(model_to_music_gen_split_load_opts(&args).await?).await
         }
         (Model::Medium, false) => {
-            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+            merged::<f32>(model_to_music_gen_merged_load_opts(&args).await?).await
         }
         (Model::Medium, true) => {
-            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+            split::<f32>(model_to_music_gen_split_load_opts(&args).await?).await
         }
         (Model::MediumQuant, false) => {
-            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+            merged::<f32>(model_to_music_gen_merged_load_opts(&args).await?).await
         }
         (Model::MediumQuant, true) => {
-            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+            split::<f32>(model_to_music_gen_split_load_opts(&args).await?).await
         }
         (Model::MediumFp16, false) => {
-            merged_stream::<f16>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+            merged::<f16>(model_to_music_gen_merged_load_opts(&args).await?).await
         }
         (Model::MediumFp16, true) => {
-            split_stream::<f16>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+            split::<f16>(model_to_music_gen_split_load_opts(&args).await?).await
         }
         (Model::Large, false) => {
-            merged_stream::<f32>(model_to_music_gen_merged_load_opts(&args).await?, &args).await
+            merged::<f32>(model_to_music_gen_merged_load_opts(&args).await?).await
         }
         (Model::Large, true) => {
-            split_stream::<f32>(model_to_music_gen_split_load_opts(&args).await?, &args).await
+            split::<f32>(model_to_music_gen_split_load_opts(&args).await?).await
         }
     }?;
 
@@ -190,7 +181,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let mut data = VecDeque::new();
-    while let Some(sample) = sample_stream.recv().await {
+    let bar = LoadingBarFactor::bar("Generating audio");
+    let mut stream = generate_audio.generate(
+        &args.prompt,
+        args.secs,
+        Box::new(move |el, t| bar.update_elapsed_total(el, t)),
+    ).await?;
+    while let Some(sample) = stream.recv().await {
         data.push_back(sample?);
     }
 
