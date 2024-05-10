@@ -11,7 +11,7 @@ use ort::{
 use crate::audio_manager::AudioManager;
 use crate::loading_bar_factory::LoadingBarFactor;
 use crate::music_gen::{
-    MusicGen, AudioSamplesGenerator, MusicGenMergedLoadOptions, MusicGenSplitLoadOptions,
+    AudioSamplesGenerator, MusicGen, MusicGenMergedLoadOptions, MusicGenSplitLoadOptions,
 };
 use crate::music_gen_decoder::{MusicGenMergedDecoder, MusicGenSplitDecoder, MusicGenType};
 use crate::storage::Storage;
@@ -129,49 +129,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
         Ok(Box::new(music_gen))
     }
 
-    let generate_audio = match (args.model, args.use_split_decoder) {
-        (Model::Small, false) => {
-            merged::<f32>(model_to_music_gen_merged_load_opts(&args).await?).await
-        }
-        (Model::Small, true) => {
-            split::<f32>(model_to_music_gen_split_load_opts(&args).await?).await
-        }
-        (Model::SmallQuant, false) => {
-            merged::<f32>(model_to_music_gen_merged_load_opts(&args).await?).await
-        }
-        (Model::SmallQuant, true) => {
-            split::<f32>(model_to_music_gen_split_load_opts(&args).await?).await
-        }
-        (Model::SmallFp16, false) => {
-            merged::<f16>(model_to_music_gen_merged_load_opts(&args).await?).await
-        }
-        (Model::SmallFp16, true) => {
-            split::<f16>(model_to_music_gen_split_load_opts(&args).await?).await
-        }
-        (Model::Medium, false) => {
-            merged::<f32>(model_to_music_gen_merged_load_opts(&args).await?).await
-        }
-        (Model::Medium, true) => {
-            split::<f32>(model_to_music_gen_split_load_opts(&args).await?).await
-        }
-        (Model::MediumQuant, false) => {
-            merged::<f32>(model_to_music_gen_merged_load_opts(&args).await?).await
-        }
-        (Model::MediumQuant, true) => {
-            split::<f32>(model_to_music_gen_split_load_opts(&args).await?).await
-        }
-        (Model::MediumFp16, false) => {
-            merged::<f16>(model_to_music_gen_merged_load_opts(&args).await?).await
-        }
-        (Model::MediumFp16, true) => {
-            split::<f16>(model_to_music_gen_split_load_opts(&args).await?).await
-        }
-        (Model::Large, false) => {
-            merged::<f32>(model_to_music_gen_merged_load_opts(&args).await?).await
-        }
-        (Model::Large, true) => {
-            split::<f32>(model_to_music_gen_split_load_opts(&args).await?).await
-        }
+    let audio_generator = match (args.model, args.use_split_decoder) {
+        (Model::Small, false) => merged::<f32>(merged_opts(&args).await?).await,
+        (Model::Small, true) => split::<f32>(split_ops(&args).await?).await,
+        (Model::SmallQuant, false) => merged::<f32>(merged_opts(&args).await?).await,
+        (Model::SmallQuant, true) => split::<f32>(split_ops(&args).await?).await,
+        (Model::SmallFp16, false) => merged::<f16>(merged_opts(&args).await?).await,
+        (Model::SmallFp16, true) => split::<f16>(split_ops(&args).await?).await,
+        (Model::Medium, false) => merged::<f32>(merged_opts(&args).await?).await,
+        (Model::Medium, true) => split::<f32>(split_ops(&args).await?).await,
+        (Model::MediumQuant, false) => merged::<f32>(merged_opts(&args).await?).await,
+        (Model::MediumQuant, true) => split::<f32>(split_ops(&args).await?).await,
+        (Model::MediumFp16, false) => merged::<f16>(merged_opts(&args).await?).await,
+        (Model::MediumFp16, true) => split::<f16>(split_ops(&args).await?).await,
+        (Model::Large, false) => merged::<f32>(merged_opts(&args).await?).await,
+        (Model::Large, true) => split::<f32>(split_ops(&args).await?).await,
     }?;
 
     let output = if !args.output.ends_with(".wav") {
@@ -182,11 +154,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut data = VecDeque::new();
     let bar = LoadingBarFactor::bar("Generating audio");
-    let mut stream = generate_audio.generate(
-        &args.prompt,
-        args.secs,
-        Box::new(move |el, t| bar.update_elapsed_total(el, t)),
-    ).await?;
+    let mut stream = audio_generator
+        .generate(
+            &args.prompt,
+            args.secs,
+            Box::new(move |el, t| bar.update_elapsed_total(el, t)),
+        )
+        .await?;
     while let Some(sample) = stream.recv().await {
         data.push_back(sample?);
     }
@@ -254,9 +228,7 @@ macro_rules! hf_url {
     };
 }
 
-async fn model_to_music_gen_merged_load_opts(
-    args: &Args,
-) -> Result<MusicGenMergedLoadOptions, Box<dyn Error>> {
+async fn merged_opts(args: &Args) -> Result<MusicGenMergedLoadOptions, Box<dyn Error>> {
     // Note that here some destination paths are exactly the same no matter the model.
     // This is because files are exactly the same, and if someone tried model "small",
     // we do not want to force them to re-download repeated files. The following files
@@ -342,9 +314,7 @@ async fn model_to_music_gen_merged_load_opts(
     })
 }
 
-async fn model_to_music_gen_split_load_opts(
-    args: &Args,
-) -> Result<MusicGenSplitLoadOptions, Box<dyn Error>> {
+async fn split_ops(args: &Args) -> Result<MusicGenSplitLoadOptions, Box<dyn Error>> {
     let remote_file_spec = match args.model {
         Model::Small => vec![
             hf_url!("small/config.json"),
