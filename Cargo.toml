@@ -1,7 +1,7 @@
 [package]
 name = "musicgpt"
 license = "MIT"
-version = "0.1.32"
+version = "0.1.33"
 edition = "2021"
 description = "Generate music samples from natural language prompt locally with your own computer"
 keywords = ["llm", "music", "audio", "ai"]
