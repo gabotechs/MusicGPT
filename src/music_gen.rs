@@ -49,7 +49,7 @@ impl<T: MusicGenType + 'static> MusicGen<MusicGenMergedDecoder<T>> {
                 _phantom_data: PhantomData,
             },
             audio_encodec: MusicGenAudioEncodec {
-                audio_encodec_decode: opts.audio_encodec_decode,
+                audio_encodec_decode: Arc::new(opts.audio_encodec_decode),
             },
         })
     }
@@ -86,14 +86,14 @@ impl<T: MusicGenType + 'static> MusicGen<MusicGenSplitDecoder<T>> {
                 _phantom_data: PhantomData,
             },
             audio_encodec: MusicGenAudioEncodec {
-                audio_encodec_decode: opts.audio_encodec_decode,
+                audio_encodec_decode: Arc::new(opts.audio_encodec_decode),
             },
         })
     }
 }
 
 impl<D: MusicGenDecoder> MusicGen<D> {
-    pub async fn generate<Cb: Fn(usize, usize)>(
+    pub fn generate<Cb: Fn(usize, usize) + Send + Sync + 'static>(
         &self,
         text: &str,
         secs: usize,
@@ -104,6 +104,6 @@ impl<D: MusicGenDecoder> MusicGen<D> {
         let generator = self
             .decoder
             .generate_tokens(last_hidden_state, attention_mask, max_len)?;
-        self.audio_encodec.encode(generator, max_len, cb).await
+        Ok(self.audio_encodec.encode(generator, max_len, cb))
     }
 }

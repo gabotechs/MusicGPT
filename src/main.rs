@@ -119,10 +119,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         spinner.finish_and_clear();
         let bar = LoadingBarFactor::bar("Generating audio");
         music_gen
-            .generate(&args.prompt, args.secs, |el, t| {
+            .generate(&args.prompt, args.secs, move |el, t| {
                 bar.update_elapsed_total(el, t)
             })
-            .await
     }
 
     async fn merged_stream<T: MusicGenType + 'static>(
@@ -134,10 +133,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         spinner.finish_and_clear();
         let bar = LoadingBarFactor::bar("Generating audio");
         music_gen
-            .generate(&args.prompt, args.secs, |el, t| {
+            .generate(&args.prompt, args.secs, move |el, t| {
                 bar.update_elapsed_total(el, t)
             })
-            .await
     }
 
     let mut sample_stream = match (args.model, args.use_split_decoder) {
@@ -257,13 +255,6 @@ macro_rules! hf_url {
             concat!("v1/", $t,),
         )
     };
-}
-
-fn model_not_available<T>() -> Result<T, Box<dyn Error>> {
-    Err(Box::new(std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        "Model not available",
-    )))
 }
 
 async fn model_to_music_gen_merged_load_opts(
