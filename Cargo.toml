@@ -28,6 +28,7 @@ half = { version = "2.4.1", features = ["num-traits"] }
 lazy_static = "1.4.0"
 tracing-subscriber = { version = "0.3.18", features = [ "env-filter", "fmt" ] }
 async-trait = "0.1.80"
+anyhow = "1.0.83"
 
 [features]
 default = []

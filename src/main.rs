@@ -1,26 +1,27 @@
 use std::collections::VecDeque;
-use std::error::Error;
 use std::path::PathBuf;
+use std::sync::Arc;
 
+use anyhow::anyhow;
 use clap::{Parser, ValueEnum};
 use half::f16;
 use ort::{
     CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider, TensorRTExecutionProvider,
 };
+use tokenizers::Tokenizer;
+use tokio::fs;
 
 use crate::audio_manager::AudioManager;
 use crate::loading_bar_factory::LoadingBarFactor;
-use crate::music_gen::{
-    AudioSamplesGenerator, MusicGen, MusicGenMergedLoadOptions, MusicGenSplitLoadOptions,
-};
-use crate::music_gen_decoder::{MusicGenMergedDecoder, MusicGenSplitDecoder, MusicGenType};
+use crate::music_gen_audio_encodec::MusicGenAudioEncodec;
+use crate::music_gen_decoder::{MusicGenDecoder, MusicGenMergedDecoder, MusicGenSplitDecoder};
+use crate::music_gen_text_encoder::MusicGenTextEncoder;
 use crate::storage::Storage;
 
 mod audio_manager;
 mod delay_pattern_mask_ids;
 mod loading_bar_factory;
 mod logits;
-mod music_gen;
 mod music_gen_audio_encodec;
 mod music_gen_config;
 mod music_gen_decoder;
@@ -29,6 +30,8 @@ mod music_gen_outputs;
 mod music_gen_text_encoder;
 mod storage;
 mod tensor_ops;
+
+const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
 
 #[derive(Clone, Copy, ValueEnum)]
 enum Model {
@@ -81,27 +84,20 @@ struct Args {
     no_playback: bool,
 }
 
-fn io_err(msg: &str) -> Result<(), Box<dyn Error>> {
-    Err(Box::new(std::io::Error::new(
-        std::io::ErrorKind::Other,
-        msg,
-    )))
-}
-
 impl Args {
-    fn validate(&self) -> Result<(), Box<dyn Error>> {
+    fn validate(&self) -> anyhow::Result<()> {
         if self.secs < 1 {
-            return io_err("--secs must > 0");
+            return Err(anyhow!("--secs must > 0"));
         }
         if self.secs > 30 {
-            return io_err("--secs must <= 30");
+            return Err(anyhow!("--secs must <= 30"));
         }
         Ok(())
     }
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn Error>> {
+async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
     args.validate()?;
@@ -111,40 +107,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         init_gpu()?;
     }
 
-    async fn split<T: MusicGenType + 'static>(
-        opts: MusicGenSplitLoadOptions,
-    ) -> ort::Result<Box<dyn AudioSamplesGenerator>> {
-        let spinner = LoadingBarFactor::spinner("Loading models");
-        let music_gen = MusicGen::<MusicGenSplitDecoder<T>>::load(opts).await?;
-        spinner.finish_and_clear();
-        Ok(Box::new(music_gen))
-    }
-
-    async fn merged<T: MusicGenType + 'static>(
-        opts: MusicGenMergedLoadOptions,
-    ) -> ort::Result<Box<dyn AudioSamplesGenerator>> {
-        let spinner = LoadingBarFactor::spinner("Loading models");
-        let music_gen = MusicGen::<MusicGenMergedDecoder<T>>::load(opts).await?;
-        spinner.finish_and_clear();
-        Ok(Box::new(music_gen))
-    }
-
-    let audio_generator = match (args.model, args.use_split_decoder) {
-        (Model::Small, false) => merged::<f32>(merged_opts(&args).await?).await,
-        (Model::Small, true) => split::<f32>(split_ops(&args).await?).await,
-        (Model::SmallQuant, false) => merged::<f32>(merged_opts(&args).await?).await,
-        (Model::SmallQuant, true) => split::<f32>(split_ops(&args).await?).await,
-        (Model::SmallFp16, false) => merged::<f16>(merged_opts(&args).await?).await,
-        (Model::SmallFp16, true) => split::<f16>(split_ops(&args).await?).await,
-        (Model::Medium, false) => merged::<f32>(merged_opts(&args).await?).await,
-        (Model::Medium, true) => split::<f32>(split_ops(&args).await?).await,
-        (Model::MediumQuant, false) => merged::<f32>(merged_opts(&args).await?).await,
-        (Model::MediumQuant, true) => split::<f32>(split_ops(&args).await?).await,
-        (Model::MediumFp16, false) => merged::<f16>(merged_opts(&args).await?).await,
-        (Model::MediumFp16, true) => split::<f16>(split_ops(&args).await?).await,
-        (Model::Large, false) => merged::<f32>(merged_opts(&args).await?).await,
-        (Model::Large, true) => split::<f32>(split_ops(&args).await?).await,
-    }?;
+    let max_len = args.secs * INPUT_IDS_BATCH_PER_SECOND;
+    let (text_encoder, decoder, audio_encodec) = build_music_gen_parts(&args).await?;
 
     let output = if !args.output.ends_with(".wav") {
         args.output + ".wav"
@@ -152,12 +116,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         args.output
     };
 
-    let mut data = VecDeque::new();
+    let (last_hidden_state, attention_mask) = text_encoder.encode(&args.prompt)?;
+    let token_stream = decoder.generate_tokens(last_hidden_state, attention_mask, max_len)?;
+
     let bar = LoadingBarFactor::bar("Generating audio");
-    let mut stream = audio_generator
-        .generate(&args.prompt, args.secs, bar.into_update_callback())
+    let mut sample_stream = audio_encodec
+        .encode(token_stream, max_len, bar.into_update_callback())
         .await?;
-    while let Some(sample) = stream.recv().await {
+
+    let mut data = VecDeque::new();
+    while let Some(sample) = sample_stream.recv().await {
         data.push_back(sample?);
     }
 
@@ -178,7 +146,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn init_gpu() -> Result<(), Box<dyn Error>> {
+fn init_gpu() -> anyhow::Result<()> {
     let mut candidates = vec![];
 
     if cfg!(feature = "tensorrt") {
@@ -203,9 +171,9 @@ fn init_gpu() -> Result<(), Box<dyn Error>> {
     }
 
     if providers.is_empty() {
-        return io_err(
+        return Err(anyhow!(
             "No hardware accelerator was detected, try running the program without the --gpu flag",
-        );
+        ));
     }
 
     ort::init().with_execution_providers(candidates).commit()?;
@@ -224,39 +192,98 @@ macro_rules! hf_url {
     };
 }
 
-async fn merged_opts(args: &Args) -> Result<MusicGenMergedLoadOptions, Box<dyn Error>> {
-    // Note that here some destination paths are exactly the same no matter the model.
-    // This is because files are exactly the same, and if someone tried model "small",
-    // we do not want to force them to re-download repeated files. The following files
-    // are the same independently of the model:
-    // - tokenizer.json
-    // - text_encoder.onnx
-    // - encodec_decode.onnx
-    // That's why they are not prefixed by the model size. Files prefix by the model size
-    // do vary depending on the model.
-    let remote_file_spec = match args.model {
-        Model::Small => vec![
+async fn build_music_gen_parts(
+    args: &Args,
+) -> anyhow::Result<(
+    MusicGenTextEncoder,
+    Box<dyn MusicGenDecoder>,
+    MusicGenAudioEncodec,
+)> {
+    let remote_file_spec = match (args.model, args.use_split_decoder) {
+        (Model::Small, true) => vec![
+            hf_url!("small/config.json"),
+            hf_url!("small/tokenizer.json"),
+            hf_url!("small_fp32/text_encoder.onnx"),
+            hf_url!("small_fp32/decoder_model.onnx"),
+            hf_url!("small_fp32/decoder_with_past_model.onnx"),
+            hf_url!("small_fp32/encodec_decode.onnx"),
+        ],
+        (Model::SmallQuant, true) => vec![
+            hf_url!("small/config.json"),
+            hf_url!("small/tokenizer.json"),
+            hf_url!("small_fp32/text_encoder.onnx"),
+            hf_url!("small_i8/decoder_model.onnx"),
+            hf_url!("small_i8/decoder_with_past_model.onnx"),
+            hf_url!("small_fp32/encodec_decode.onnx"),
+        ],
+        (Model::SmallFp16, true) => vec![
+            hf_url!("small/config.json"),
+            hf_url!("small/tokenizer.json"),
+            hf_url!("small_fp16/text_encoder.onnx"),
+            hf_url!("small_fp16/decoder_model.onnx"),
+            hf_url!("small_fp16/decoder_with_past_model.onnx"),
+            hf_url!("small_fp16/encodec_decode.onnx"),
+        ],
+        (Model::Medium, true) => vec![
+            hf_url!("medium/config.json"),
+            hf_url!("medium/tokenizer.json"),
+            hf_url!("medium_fp32/text_encoder.onnx"),
+            hf_url!("medium_fp32/decoder_model.onnx"),
+            hf_url!("medium_fp32/decoder_with_past_model.onnx"),
+            hf_url!("medium_fp32/encodec_decode.onnx"),
+            // Files below will just be downloaded,
+            hf_url!("medium_fp32/decoder_model.onnx_data"),
+            hf_url!("medium_fp32/decoder_with_past_model.onnx_data"),
+        ],
+        (Model::MediumQuant, true) => vec![
+            hf_url!("medium/config.json"),
+            hf_url!("medium/tokenizer.json"),
+            hf_url!("medium_fp32/text_encoder.onnx"),
+            hf_url!("medium_i8/decoder_model.onnx"),
+            hf_url!("medium_i8/decoder_with_past_model.onnx"),
+            hf_url!("medium_fp32/encodec_decode.onnx"),
+        ],
+        (Model::MediumFp16, true) => vec![
+            hf_url!("medium/config.json"),
+            hf_url!("medium/tokenizer.json"),
+            hf_url!("medium_fp16/text_encoder.onnx"),
+            hf_url!("medium_fp16/decoder_model.onnx"),
+            hf_url!("medium_fp16/decoder_with_past_model.onnx"),
+            hf_url!("medium_fp16/encodec_decode.onnx"),
+        ],
+        (Model::Large, true) => vec![
+            hf_url!("large/config.json"),
+            hf_url!("large/tokenizer.json"),
+            hf_url!("large_fp32/text_encoder.onnx"),
+            hf_url!("large_fp32/decoder_model.onnx"),
+            hf_url!("large_fp32/decoder_with_past_model.onnx"),
+            hf_url!("large_fp32/encodec_decode.onnx"),
+            // Files below will just be downloaded,
+            hf_url!("large_fp32/decoder_model.onnx_data"),
+            hf_url!("large_fp32/decoder_with_past_model.onnx_data"),
+        ],
+        (Model::Small, false) => vec![
             hf_url!("small/config.json"),
             hf_url!("small/tokenizer.json"),
             hf_url!("small_fp32/text_encoder.onnx"),
             hf_url!("small_fp32/decoder_model_merged.onnx"),
             hf_url!("small_fp32/encodec_decode.onnx"),
         ],
-        Model::SmallQuant => vec![
+        (Model::SmallQuant, false) => vec![
             hf_url!("small/config.json"),
             hf_url!("small/tokenizer.json"),
             hf_url!("small_fp32/text_encoder.onnx"),
             hf_url!("small_i8/decoder_model_merged.onnx"),
             hf_url!("small_fp32/encodec_decode.onnx"),
         ],
-        Model::SmallFp16 => vec![
+        (Model::SmallFp16, false) => vec![
             hf_url!("small/config.json"),
             hf_url!("small/tokenizer.json"),
             hf_url!("small_fp16/text_encoder.onnx"),
             hf_url!("small_fp16/decoder_model_merged.onnx"),
             hf_url!("small_fp16/encodec_decode.onnx"),
         ],
-        Model::Medium => vec![
+        (Model::Medium, false) => vec![
             hf_url!("medium/config.json"),
             hf_url!("medium/tokenizer.json"),
             hf_url!("medium_fp32/text_encoder.onnx"),
@@ -265,14 +292,14 @@ async fn merged_opts(args: &Args) -> Result<MusicGenMergedLoadOptions, Box<dyn E
             // Files below will just be downloaded,
             hf_url!("medium_fp32/decoder_model_merged.onnx_data"),
         ],
-        Model::MediumQuant => vec![
+        (Model::MediumQuant, false) => vec![
             hf_url!("medium/config.json"),
             hf_url!("medium/tokenizer.json"),
             hf_url!("medium_fp32/text_encoder.onnx"),
             hf_url!("medium_i8/decoder_model_merged.onnx"),
             hf_url!("medium_fp32/encodec_decode.onnx"),
         ],
-        Model::MediumFp16 => vec![
+        (Model::MediumFp16, false) => vec![
             hf_url!("medium/config.json"),
             hf_url!("medium/tokenizer.json"),
             hf_url!("medium_fp16/text_encoder.onnx"),
@@ -281,7 +308,7 @@ async fn merged_opts(args: &Args) -> Result<MusicGenMergedLoadOptions, Box<dyn E
             // Files below will just be downloaded,
             hf_url!("medium_fp16/decoder_model_merged.onnx_data"),
         ],
-        Model::Large => vec![
+        (Model::Large, false) => vec![
             hf_url!("large/config.json"),
             hf_url!("large/tokenizer.json"),
             hf_url!("large_fp32/text_encoder.onnx"),
@@ -294,112 +321,75 @@ async fn merged_opts(args: &Args) -> Result<MusicGenMergedLoadOptions, Box<dyn E
 
     let mut results = download(remote_file_spec, args.force_download).await?;
 
+    // First result is the decoder config.
     let config = results.pop_front().unwrap();
+    // Second result is the tokenizer.
     let tokenizer = results.pop_front().unwrap();
+    let mut tokenizer = Tokenizer::from_file(tokenizer).expect("Could not load tokenizer");
+    tokenizer
+        .with_padding(None)
+        .with_truncation(None)
+        .expect("Could not configure tokenizer");
+
     let mut sessions = build_sessions(results).await?;
-    let text_encoder = sessions.pop_front().unwrap();
-    let decoder_model_merged = sessions.pop_front().unwrap();
-    let audio_encodec_decode = sessions.pop_front().unwrap();
 
-    Ok(MusicGenMergedLoadOptions {
-        config,
+    let text_encoder = MusicGenTextEncoder {
         tokenizer,
-        text_encoder,
-        decoder_model_merged,
-        audio_encodec_decode,
-    })
-}
-
-async fn split_ops(args: &Args) -> Result<MusicGenSplitLoadOptions, Box<dyn Error>> {
-    let remote_file_spec = match args.model {
-        Model::Small => vec![
-            hf_url!("small/config.json"),
-            hf_url!("small/tokenizer.json"),
-            hf_url!("small_fp32/text_encoder.onnx"),
-            hf_url!("small_fp32/decoder_model.onnx"),
-            hf_url!("small_fp32/decoder_with_past_model.onnx"),
-            hf_url!("small_fp32/encodec_decode.onnx"),
-        ],
-        Model::SmallQuant => vec![
-            hf_url!("small/config.json"),
-            hf_url!("small/tokenizer.json"),
-            hf_url!("small_fp32/text_encoder.onnx"),
-            hf_url!("small_i8/decoder_model.onnx"),
-            hf_url!("small_i8/decoder_with_past_model.onnx"),
-            hf_url!("small_fp32/encodec_decode.onnx"),
-        ],
-        Model::SmallFp16 => vec![
-            hf_url!("small/config.json"),
-            hf_url!("small/tokenizer.json"),
-            hf_url!("small_fp16/text_encoder.onnx"),
-            hf_url!("small_fp16/decoder_model.onnx"),
-            hf_url!("small_fp16/decoder_with_past_model.onnx"),
-            hf_url!("small_fp16/encodec_decode.onnx"),
-        ],
-        Model::Medium => vec![
-            hf_url!("medium/config.json"),
-            hf_url!("medium/tokenizer.json"),
-            hf_url!("medium_fp32/text_encoder.onnx"),
-            hf_url!("medium_fp32/decoder_model.onnx"),
-            hf_url!("medium_fp32/decoder_with_past_model.onnx"),
-            hf_url!("medium_fp32/encodec_decode.onnx"),
-            // Files below will just be downloaded,
-            hf_url!("medium_fp32/decoder_model.onnx_data"),
-            hf_url!("medium_fp32/decoder_with_past_model.onnx_data"),
-        ],
-        Model::MediumQuant => vec![
-            hf_url!("medium/config.json"),
-            hf_url!("medium/tokenizer.json"),
-            hf_url!("medium_fp32/text_encoder.onnx"),
-            hf_url!("medium_i8/decoder_model.onnx"),
-            hf_url!("medium_i8/decoder_with_past_model.onnx"),
-            hf_url!("medium_fp32/encodec_decode.onnx"),
-        ],
-        Model::MediumFp16 => vec![
-            hf_url!("medium/config.json"),
-            hf_url!("medium/tokenizer.json"),
-            hf_url!("medium_fp16/text_encoder.onnx"),
-            hf_url!("medium_fp16/decoder_model.onnx"),
-            hf_url!("medium_fp16/decoder_with_past_model.onnx"),
-            hf_url!("medium_fp16/encodec_decode.onnx"),
-        ],
-        Model::Large => vec![
-            hf_url!("large/config.json"),
-            hf_url!("large/tokenizer.json"),
-            hf_url!("large_fp32/text_encoder.onnx"),
-            hf_url!("large_fp32/decoder_model.onnx"),
-            hf_url!("large_fp32/decoder_with_past_model.onnx"),
-            hf_url!("large_fp32/encodec_decode.onnx"),
-            // Files below will just be downloaded,
-            hf_url!("large_fp32/decoder_model.onnx_data"),
-            hf_url!("large_fp32/decoder_with_past_model.onnx_data"),
-        ],
+        // third result is the text encoder.
+        text_encoder: sessions.pop_front().unwrap(),
     };
 
-    let mut results = download(remote_file_spec, args.force_download).await?;
+    let config = fs::read_to_string(config)
+        .await
+        .expect("Error reading config file from disk");
+    let config = serde_json::from_str(&config).expect("Could not deserialize config file");
+    #[allow(clippy::collapsible_else_if)]
+    let decoder: Box<dyn MusicGenDecoder> = if args.use_split_decoder {
+        macro_rules! load {
+            ($ty: ty) => {
+                Box::new(MusicGenSplitDecoder::<$ty> {
+                    // forth and fifth result are the decoder parts if split.
+                    decoder_model: sessions.pop_front().unwrap(),
+                    decoder_with_past_model: Arc::new(sessions.pop_front().unwrap()),
+                    config,
+                    _phantom_data: Default::default(),
+                })
+            };
+        }
+        if matches!(args.model, Model::SmallFp16 | Model::MediumFp16) {
+            load!(f16)
+        } else {
+            load!(f32)
+        }
+    } else {
+        macro_rules! load {
+            ($ty: ty) => {
+                Box::new(MusicGenMergedDecoder::<$ty> {
+                    // forth result is the decoder.
+                    decoder_model_merged: Arc::new(sessions.pop_front().unwrap()),
+                    config,
+                    _phantom_data: Default::default(),
+                })
+            };
+        }
+        if matches!(args.model, Model::SmallFp16 | Model::MediumFp16) {
+            load!(f16)
+        } else {
+            load!(f32)
+        }
+    };
+    let audio_encodec = MusicGenAudioEncodec {
+        // last result is the audio encodec.
+        audio_encodec_decode: sessions.pop_front().unwrap(),
+    };
 
-    let config = results.pop_front().unwrap();
-    let tokenizer = results.pop_front().unwrap();
-    let mut sessions = build_sessions(results).await?;
-    let text_encoder = sessions.pop_front().unwrap();
-    let decoder_model = sessions.pop_front().unwrap();
-    let decoder_with_past_model = sessions.pop_front().unwrap();
-    let audio_encodec_decode = sessions.pop_front().unwrap();
-
-    Ok(MusicGenSplitLoadOptions {
-        config,
-        tokenizer,
-        text_encoder,
-        decoder_model,
-        decoder_with_past_model,
-        audio_encodec_decode,
-    })
+    Ok((text_encoder, decoder, audio_encodec))
 }
 
 async fn download(
     remote_file_spec: Vec<(&'static str, &'static str)>,
     force_download: bool,
-) -> Result<VecDeque<PathBuf>, Box<dyn Error>> {
+) -> anyhow::Result<VecDeque<PathBuf>> {
     let mut has_to_download = force_download;
     for (_, local_filename) in remote_file_spec.iter() {
         has_to_download = has_to_download || !Storage::exists(local_filename).await?
@@ -429,9 +419,12 @@ async fn download(
 
 async fn build_sessions(
     files: impl IntoIterator<Item = PathBuf>,
-) -> Result<VecDeque<ort::Session>, Box<dyn Error>> {
+) -> anyhow::Result<VecDeque<ort::Session>> {
     let mut results = VecDeque::new();
     for file in files {
+        if file.extension() != Some("onnx".as_ref()) {
+            continue;
+        }
         let bar = LoadingBarFactor::spinner(
             format!("Loading {:?}...", file.file_name().unwrap_or_default()).as_str(),
         );

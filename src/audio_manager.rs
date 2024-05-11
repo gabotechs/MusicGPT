@@ -1,10 +1,10 @@
 use std::collections::VecDeque;
-use std::error::Error;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use anyhow::anyhow;
 use cpal::{ChannelCount, SampleFormat, SampleRate, SupportedBufferSize, SupportedStreamConfig};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 const DEFAULT_SAMPLING_RATE: u32 = 32000;
 
@@ -29,7 +29,7 @@ impl Default for AudioManager {
 }
 
 impl AudioManager {
-    pub async fn play_from_queue(&self, mut v: VecDeque<f32>) -> Result<(), Box<dyn Error>> {
+    pub async fn play_from_queue(&self, mut v: VecDeque<f32>) -> anyhow::Result<()> {
         let time = 1000 * v.len() / self.sampling_rate as usize;
         let channels = self.n_channels;
 
@@ -41,7 +41,7 @@ impl AudioManager {
         );
 
         let device = match self.host.default_output_device() {
-            None => return Err("No audio device".into()),
+            None => return Err(anyhow!("No audio device")),
             Some(v) => v,
         };
         let stream = device.build_output_stream(
@@ -66,7 +66,7 @@ impl AudioManager {
         &self,
         v: VecDeque<f32>,
         out_path: impl Into<PathBuf>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> hound::Result<()> {
         let spec = hound::WavSpec {
             channels: self.n_channels,
             sample_rate: self.sampling_rate,
@@ -98,9 +98,9 @@ impl AudioManager {
             },
         };
 
-        let mut writer = hound::WavWriter::create(out_path.into(), spec).unwrap();
+        let mut writer = hound::WavWriter::create(out_path.into(), spec)?;
         for sample in v {
-            writer.write_sample(sample).unwrap();
+            writer.write_sample(sample)?;
         }
 
         Ok(())
