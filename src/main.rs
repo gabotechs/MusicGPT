@@ -155,11 +155,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut data = VecDeque::new();
     let bar = LoadingBarFactor::bar("Generating audio");
     let mut stream = audio_generator
-        .generate(
-            &args.prompt,
-            args.secs,
-            Box::new(move |el, t| bar.update_elapsed_total(el, t)),
-        )
+        .generate(&args.prompt, args.secs, bar.into_update_callback())
         .await?;
     while let Some(sample) = stream.recv().await {
         data.push_back(sample?);
@@ -420,7 +416,7 @@ async fn download(
             remote_file,
             local_filename,
             force_download,
-            move |el, t| bar.update_elapsed_total(el, t),
+            bar.into_update_callback(),
         )));
     }
     let mut results = VecDeque::new();

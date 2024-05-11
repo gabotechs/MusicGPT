@@ -13,6 +13,10 @@ impl Bar {
         self.0.set_length(total as u64);
         self.0.set_position(elapsed as u64);
     }
+    
+    pub fn into_update_callback(self) ->  Box<dyn Fn(usize, usize) + Send + Sync + 'static> {
+        Box::new(move |el, t|  self.update_elapsed_total(el, t))
+    }
 }
 
 impl Deref for Bar {
@@ -56,23 +60,23 @@ impl LoadingBarFactor {
         MultiBar(MultiProgress::new())
     }
 
-    pub fn spinner(msg: &str) -> Bar {
+    pub fn spinner(msg: impl Into<String>) -> Bar {
         let pb = ProgressBar::new_spinner();
         pb.enable_steady_tick(Duration::from_millis(120));
         pb.set_style(ProgressStyle::with_template("{spinner:.blue} {msg}").unwrap());
-        pb.set_message(msg.to_string());
+        pb.set_message(msg.into());
         Bar(pb)
     }
 
-    pub fn bar(prefix: &str) -> Bar {
+    pub fn bar(prefix: impl Into<String>) -> Bar {
         Self::fixed_bar(prefix, 1)
     }
 
-    pub fn fixed_bar(prefix: &str, len: usize) -> Bar {
+    pub fn fixed_bar(prefix: impl Into<String>, len: usize) -> Bar {
         let pb = ProgressBar::new(len as u64);
         pb.set_style(
             ProgressStyle::with_template(
-                &(prefix.to_string()
+                &(prefix.into()
                     + " {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] ({eta})"),
             )
             .unwrap()
