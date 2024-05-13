@@ -2,3 +2,4 @@
 /target
 /.test
 *.wav
+!assets/test.wav

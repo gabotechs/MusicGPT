@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::anyhow;
-use cpal::{ChannelCount, SampleFormat, SampleRate, SupportedBufferSize, SupportedStreamConfig};
+use cpal::{ChannelCount, SampleFormat, SampleRate, Stream, SupportedBufferSize, SupportedStreamConfig};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 const DEFAULT_SAMPLING_RATE: u32 = 32000;
@@ -28,8 +28,28 @@ impl Default for AudioManager {
     }
 }
 
+pub struct AudioStream {
+    pub stream: Stream,
+    pub duration: Duration
+}
+
+
+unsafe impl Send for AudioStream {}
+unsafe impl Sync for AudioStream {}
+
+
 impl AudioManager {
-    pub async fn play_from_queue(&self, mut v: VecDeque<f32>) -> anyhow::Result<()> {
+    pub fn play_from_wav(&self, path: PathBuf) -> anyhow::Result<AudioStream> {
+        let mut reader = hound::WavReader::open(path)?;
+        let samples = reader.samples::<f32>();
+        let mut v = VecDeque::new();
+        for sample in samples.into_iter() {
+            v.push_back(sample?);
+        }
+        self.play_from_queue(v)
+    }
+    
+    pub fn play_from_queue(&self, mut v: VecDeque<f32>) -> anyhow::Result<AudioStream> {
         let time = 1000 * v.len() / self.sampling_rate as usize;
         let channels = self.n_channels;
 
@@ -58,11 +78,13 @@ impl AudioManager {
         )?;
 
         stream.play()?;
-        tokio::time::sleep(Duration::from_millis(time as u64)).await;
-        Ok(())
+        Ok(AudioStream {
+            stream,
+            duration: Duration::from_millis(time as u64)
+        })
     }
 
-    pub async fn store_as_wav(
+    pub fn store_as_wav(
         &self,
         v: VecDeque<f32>,
         out_path: impl Into<PathBuf>,

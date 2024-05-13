@@ -1,9 +1,10 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 
 use num_traits::Zero;
-use tokio::sync::mpsc::Receiver;
 
 use crate::delay_pattern_mask_ids::DelayedPatternMaskIds;
 use crate::music_gen_config::MusicGenConfig;
@@ -21,11 +22,12 @@ impl MusicGenType for half::f16 {}
 // TODO: is this configurable?
 const GUIDANCE_SCALE: usize = 3;
 
-pub trait MusicGenDecoder {
+pub trait MusicGenDecoder: Send + Sync {
     fn generate_tokens(
         &self,
         last_hidden_state: ort::DynValue,
         encoder_attention_mask: ort::DynValue,
+        abort_controller: Arc<AtomicBool>,
         max_len: usize,
     ) -> ort::Result<Receiver<ort::Result<[i64; 4]>>>;
 }
@@ -33,14 +35,18 @@ pub trait MusicGenDecoder {
 pub struct MusicGenMergedDecoder<T: MusicGenType> {
     pub decoder_model_merged: Arc<ort::Session>,
     pub config: MusicGenConfig,
-    pub _phantom_data: PhantomData<T>
+    pub _phantom_data: PhantomData<T>,
 }
+
+unsafe impl<T: MusicGenType> Send for MusicGenMergedDecoder<T> {}
+unsafe impl<T: MusicGenType> Sync for MusicGenMergedDecoder<T> {}
 
 impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenMergedDecoder<T> {
     fn generate_tokens(
         &self,
         last_hidden_state: ort::DynValue,
         encoder_attention_mask: ort::DynValue,
+        abort_controller: Arc<AtomicBool>,
         max_len: usize,
     ) -> ort::Result<Receiver<ort::Result<[i64; 4]>>> {
         // Apparently, there's a setting in huggingface's transformers that says that
@@ -66,69 +72,73 @@ impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenMergedDecoder<T> {
         let encoder_dims = [1, num_attention_heads, 0, d_kv];
 
         // TODO: 100?
-        let (tx, rx) = tokio::sync::mpsc::channel::<ort::Result<[i64; 4]>>(100);
+        let (tx, rx) = std::sync::mpsc::channel::<ort::Result<[i64; 4]>>();
         let tx2 = tx.clone();
-        let future = async move {
-            inputs.input_ids(ort::Tensor::from_array(([8, 1], vec![pad_token_id; 8]))?)?;
 
-            for i in 0..num_hidden_layers {
-                inputs.past_key_value_decoder_key(i, zeros_tensor::<T>(&decoder_dims))?;
-                inputs.past_key_value_decoder_value(i, zeros_tensor::<T>(&decoder_dims))?;
-                inputs.past_key_value_encoder_key(i, zeros_tensor::<T>(&encoder_dims))?;
-                inputs.past_key_value_encoder_value(i, zeros_tensor::<T>(&encoder_dims))?;
-            }
-            inputs.use_cache_branch(false);
-            for _ in 0..max_len {
-                let outputs = decoder_model_merged.run(inputs.ort())?;
-                let mut outputs = MusicGenOutputs::new(outputs);
+        std::thread::spawn(move || {
+            let result = {
+                inputs.input_ids(ort::Tensor::from_array(([8, 1], vec![pad_token_id; 8]))?)?;
 
-                delay_pattern_mask_ids.push(
-                    outputs
-                        .take_logits()?
-                        .apply_free_guidance(GUIDANCE_SCALE)
-                        .sample(top_k)
-                        .iter()
-                        .map(|e| e.0),
-                );
-
-                let [a, b, c, d] = delay_pattern_mask_ids.last_delayed_masked(pad_token_id);
-                inputs.input_ids(ort::Tensor::from_array((
-                    [8, 1],
-                    vec![a, b, c, d, a, b, c, d],
-                ))?)?;
-
-                if let Some(last_de_delayed) = delay_pattern_mask_ids.last_de_delayed() {
-                    let sent = tx.send(Ok(last_de_delayed)).await;
-                    if sent.is_err() {
-                        break;
-                    }
+                for i in 0..num_hidden_layers {
+                    inputs.past_key_value_decoder_key(i, zeros_tensor::<T>(&decoder_dims))?;
+                    inputs.past_key_value_decoder_value(i, zeros_tensor::<T>(&decoder_dims))?;
+                    inputs.past_key_value_encoder_key(i, zeros_tensor::<T>(&encoder_dims))?;
+                    inputs.past_key_value_encoder_value(i, zeros_tensor::<T>(&encoder_dims))?;
                 }
-
-                for j in 0..num_hidden_layers {
-                    let v = outputs.take_present_decoder_key(j);
-                    inputs.past_key_value_decoder_key(j, v)?;
-                    let v = outputs.take_present_decoder_value(j);
-                    inputs.past_key_value_decoder_value(j, v)?;
-                    if !inputs.use_cache_branch {
-                        // Optimization introduced by optimum to reuse past key values. So, we just replace the constant
-                        // outputs with the previous past key values.
-                        // https://github.com/huggingface/optimum/blob/0bf2c05fb7e1182b52d21b703cfc95fd9e4ea3dc/optimum/onnxruntime/base.py#L677-L704
-                        let v = outputs.take_present_encoder_key(j);
-                        inputs.past_key_value_encoder_key(j, v)?;
-                        let v = outputs.take_present_encoder_value(j);
-                        inputs.past_key_value_encoder_value(j, v)?;
+                inputs.use_cache_branch(false);
+                for _ in 0..max_len {
+                    if abort_controller.load(Ordering::Relaxed) {
+                        return Err(ort::Error::CustomError("Aborted".into()));
                     }
+                    let outputs = decoder_model_merged.run(inputs.ort())?;
+                    let mut outputs = MusicGenOutputs::new(outputs);
+
+                    delay_pattern_mask_ids.push(
+                        outputs
+                            .take_logits()?
+                            .apply_free_guidance(GUIDANCE_SCALE)
+                            .sample(top_k)
+                            .iter()
+                            .map(|e| e.0),
+                    );
+
+                    let [a, b, c, d] = delay_pattern_mask_ids.last_delayed_masked(pad_token_id);
+                    inputs.input_ids(ort::Tensor::from_array((
+                        [8, 1],
+                        vec![a, b, c, d, a, b, c, d],
+                    ))?)?;
+
+                    if let Some(last_de_delayed) = delay_pattern_mask_ids.last_de_delayed() {
+                        let sent = tx.send(Ok(last_de_delayed));
+                        if sent.is_err() {
+                            break;
+                        }
+                    }
+
+                    for j in 0..num_hidden_layers {
+                        let v = outputs.take_present_decoder_key(j);
+                        inputs.past_key_value_decoder_key(j, v)?;
+                        let v = outputs.take_present_decoder_value(j);
+                        inputs.past_key_value_decoder_value(j, v)?;
+                        if !inputs.use_cache_branch {
+                            // Optimization introduced by optimum to reuse past key values. So, we just replace the constant
+                            // outputs with the previous past key values.
+                            // https://github.com/huggingface/optimum/blob/0bf2c05fb7e1182b52d21b703cfc95fd9e4ea3dc/optimum/onnxruntime/base.py#L677-L704
+                            let v = outputs.take_present_encoder_key(j);
+                            inputs.past_key_value_encoder_key(j, v)?;
+                            let v = outputs.take_present_encoder_value(j);
+                            inputs.past_key_value_encoder_value(j, v)?;
+                        }
+                    }
+
+                    inputs.use_cache_branch(true);
                 }
-
-                inputs.use_cache_branch(true);
-            }
-            Ok::<(), ort::Error>(())
-        };
-
-        tokio::spawn(async move {
-            if let Err(err) = future.await {
-                let _ = tx2.send(Err(err)).await;
+                Ok::<(), ort::Error>(())
             };
+            if let Err(err) = result {
+                let _ = tx2.send(Err(err));
+            }
+            Ok(())
         });
 
         Ok(rx)
@@ -139,14 +149,18 @@ pub struct MusicGenSplitDecoder<T: MusicGenType> {
     pub decoder_model: ort::Session,
     pub decoder_with_past_model: Arc<ort::Session>,
     pub config: MusicGenConfig,
-    pub _phantom_data: PhantomData<T>
+    pub _phantom_data: PhantomData<T>,
 }
+
+unsafe impl<T: MusicGenType> Send for MusicGenSplitDecoder<T> {}
+unsafe impl<T: MusicGenType> Sync for MusicGenSplitDecoder<T> {}
 
 impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenSplitDecoder<T> {
     fn generate_tokens(
         &self,
         last_hidden_state: ort::DynValue,
         encoder_attention_mask: ort::DynValue,
+        abort_controller: Arc<AtomicBool>,
         max_len: usize,
     ) -> ort::Result<Receiver<ort::Result<[i64; 4]>>> {
         // Apparently, there's a setting in huggingface's transformers that says that
@@ -194,54 +208,57 @@ impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenSplitDecoder<T> {
         let decoder_with_past = self.decoder_with_past_model.clone();
 
         // TODO: 100?
-        let (tx, rx) = tokio::sync::mpsc::channel::<ort::Result<[i64; 4]>>(100);
+        let (tx, rx) = std::sync::mpsc::channel::<ort::Result<[i64; 4]>>();
         let tx2 = tx.clone();
-        let future = async move {
-            for _ in 0..max_len {
-                let [a, b, c, d] = delay_pattern_mask_ids.last_delayed_masked(pad_token_id);
-                inputs.input_ids(ort::Tensor::from_array((
-                    [8, 1],
-                    vec![a, b, c, d, a, b, c, d],
-                ))?)?;
-                let outputs = decoder_with_past.run(inputs.ort())?;
-                let mut outputs = MusicGenOutputs::new(outputs);
+        std::thread::spawn(move || {
+            let result = {
+                for _ in 0..max_len {
+                    if abort_controller.load(Ordering::Relaxed) {
+                        return Err(ort::Error::CustomError("Aborted".into()));
+                    }
+                    let [a, b, c, d] = delay_pattern_mask_ids.last_delayed_masked(pad_token_id);
+                    inputs.input_ids(ort::Tensor::from_array((
+                        [8, 1],
+                        vec![a, b, c, d, a, b, c, d],
+                    ))?)?;
+                    let outputs = decoder_with_past.run(inputs.ort())?;
+                    let mut outputs = MusicGenOutputs::new(outputs);
 
-                delay_pattern_mask_ids.push(
-                    outputs
-                        .take_logits()?
-                        .apply_free_guidance(GUIDANCE_SCALE)
-                        .sample(top_k)
-                        .iter()
-                        .map(|e| e.0),
-                );
+                    delay_pattern_mask_ids.push(
+                        outputs
+                            .take_logits()?
+                            .apply_free_guidance(GUIDANCE_SCALE)
+                            .sample(top_k)
+                            .iter()
+                            .map(|e| e.0),
+                    );
 
-                if let Some(last_de_delayed) = delay_pattern_mask_ids.last_de_delayed() {
-                    let sent = tx.send(Ok(last_de_delayed)).await;
-                    if sent.is_err() {
-                        break;
+                    if let Some(last_de_delayed) = delay_pattern_mask_ids.last_de_delayed() {
+                        let sent = tx.send(Ok(last_de_delayed));
+                        if sent.is_err() {
+                            break;
+                        }
+                    }
+
+                    for j in 0..num_hidden_layers {
+                        let v = outputs.take_present_decoder_key(j);
+                        inputs.past_key_value_decoder_key(j, v)?;
+                        let v = outputs.take_present_decoder_value(j);
+                        inputs.past_key_value_decoder_value(j, v)?;
+                        // NOTE: No need to propagate encoder values.
+                        //
+                        // let v = outputs.take_present_encoder_key(j);
+                        // inputs.past_key_value_encoder_key(j, v)?;
+                        // let v = outputs.take_present_encoder_value(j);
+                        // inputs.past_key_value_encoder_value(j, v)?;
                     }
                 }
-
-                for j in 0..num_hidden_layers {
-                    let v = outputs.take_present_decoder_key(j);
-                    inputs.past_key_value_decoder_key(j, v)?;
-                    let v = outputs.take_present_decoder_value(j);
-                    inputs.past_key_value_decoder_value(j, v)?;
-                    // NOTE: No need to propagate encoder values.
-                    //
-                    // let v = outputs.take_present_encoder_key(j);
-                    // inputs.past_key_value_encoder_key(j, v)?;
-                    // let v = outputs.take_present_encoder_value(j);
-                    // inputs.past_key_value_encoder_value(j, v)?;
-                }
-            }
-            Ok::<(), ort::Error>(())
-        };
-
-        tokio::spawn(async move {
-            if let Err(err) = future.await {
-                let _ = tx2.send(Err(err)).await;
+                Ok::<(), ort::Error>(())
             };
+            if let Err(err) = result {
+                let _ = tx2.send(Err(err));
+            }
+            Ok(())
         });
 
         Ok(rx)

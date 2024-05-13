@@ -6,19 +6,21 @@ use anyhow::anyhow;
 use clap::{Parser, ValueEnum};
 use half::f16;
 use ort::{
-    CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider, TensorRTExecutionProvider,
+    CoreMLExecutionProvider, CUDAExecutionProvider, ExecutionProvider, TensorRTExecutionProvider,
 };
 use tokenizers::Tokenizer;
 use tokio::fs;
 
-use crate::audio_manager::AudioManager;
+use crate::cli_interface::cli_interface;
 use crate::loading_bar_factory::LoadingBarFactor;
 use crate::music_gen_audio_encodec::MusicGenAudioEncodec;
 use crate::music_gen_decoder::{MusicGenDecoder, MusicGenMergedDecoder, MusicGenSplitDecoder};
 use crate::music_gen_text_encoder::MusicGenTextEncoder;
 use crate::storage::Storage;
+use crate::ui::App;
 
 mod audio_manager;
+mod cli_interface;
 mod delay_pattern_mask_ids;
 mod loading_bar_factory;
 mod logits;
@@ -30,8 +32,7 @@ mod music_gen_outputs;
 mod music_gen_text_encoder;
 mod storage;
 mod tensor_ops;
-
-const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
+mod ui;
 
 #[derive(Clone, Copy, ValueEnum)]
 enum Model {
@@ -49,6 +50,7 @@ enum Model {
 #[command(version, about, long_about = None)]
 struct Args {
     /// The prompt for the LLM.
+    #[arg(default_value = "")]
     prompt: String,
 
     /// The length of the audio will be generated in seconds.
@@ -82,6 +84,10 @@ struct Args {
     /// Do not play the audio automatically after inference.
     #[arg(long, default_value = "false")]
     no_playback: bool,
+
+    /// Runs the interactive UI.
+    #[arg(long, default_value = "false")]
+    ui: bool,
 }
 
 impl Args {
@@ -107,43 +113,22 @@ async fn main() -> anyhow::Result<()> {
         init_gpu()?;
     }
 
-    let max_len = args.secs * INPUT_IDS_BATCH_PER_SECOND;
     let (text_encoder, decoder, audio_encodec) = build_music_gen_parts(&args).await?;
-
-    let output = if !args.output.ends_with(".wav") {
-        args.output + ".wav"
+    if args.ui {
+        let app = App::try_from_music_gen(text_encoder, decoder, audio_encodec)?;
+        app.run()
     } else {
-        args.output
-    };
-
-    let (last_hidden_state, attention_mask) = text_encoder.encode(&args.prompt)?;
-    let token_stream = decoder.generate_tokens(last_hidden_state, attention_mask, max_len)?;
-
-    let bar = LoadingBarFactor::bar("Generating audio");
-    let mut sample_stream = audio_encodec
-        .encode(token_stream, max_len, bar.into_update_callback())
-        .await?;
-
-    let mut data = VecDeque::new();
-    while let Some(sample) = sample_stream.recv().await {
-        data.push_back(sample?);
+        cli_interface(
+            text_encoder,
+            decoder,
+            audio_encodec,
+            args.secs,
+            args.prompt,
+            args.output,
+            args.no_playback,
+        )
+        .await
     }
-
-    let audio_player = AudioManager::default();
-    if args.no_playback {
-        audio_player.store_as_wav(data, output).await?;
-    } else {
-        let spinner = LoadingBarFactor::spinner("Playing audio...");
-        let (_play_from_queue, store_as_wav) = tokio::join!(
-            audio_player.play_from_queue(data.clone()),
-            audio_player.store_as_wav(data, output)
-        );
-        // audio playback is just a best effort operation, we don't care if it fails.
-        store_as_wav?;
-        spinner.finish_and_clear();
-    }
-
-    Ok(())
 }
 
 fn init_gpu() -> anyhow::Result<()> {
@@ -161,7 +146,7 @@ fn init_gpu() -> anyhow::Result<()> {
 
     let dummy_builder = ort::Session::builder()?;
     let mut providers = vec![];
-    for provider in candidates.iter() {
+    for provider in candidates {
         if let Err(err) = provider.register(&dummy_builder) {
             println!("Could not load {}: {}", provider.as_str(), err);
         } else {
@@ -176,7 +161,7 @@ fn init_gpu() -> anyhow::Result<()> {
         ));
     }
 
-    ort::init().with_execution_providers(candidates).commit()?;
+    ort::init().with_execution_providers(providers).commit()?;
     Ok(())
 }
 
