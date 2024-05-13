@@ -1,17 +1,21 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use std::str::FromStr;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use crate::audio_manager::{AudioManager, AudioStream};
 use anyhow::anyhow;
 use clap::{Parser, ValueEnum};
 use half::f16;
 use ort::{
     CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider, TensorRTExecutionProvider,
 };
+use regex::Regex;
+use text_io::read;
 use tokenizers::Tokenizer;
 use tokio::fs;
 
-use crate::cli_interface::cli_interface;
 use crate::loading_bar_factory::LoadingBarFactor;
 use crate::music_gen_audio_encodec::MusicGenAudioEncodec;
 use crate::music_gen_decoder::{MusicGenDecoder, MusicGenMergedDecoder, MusicGenSplitDecoder};
@@ -83,6 +87,10 @@ struct Args {
     /// Do not play the audio automatically after inference.
     #[arg(long, default_value = "false")]
     no_playback: bool,
+
+    /// Disable interactive mode
+    #[arg(long, default_value = "false")]
+    no_interactive: bool,
 }
 
 impl Args {
@@ -108,17 +116,92 @@ async fn main() -> anyhow::Result<()> {
         init_gpu()?;
     }
 
+    cli_interface(&args).await
+}
+
+const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
+
+#[allow(unused_assignments, unused_variables)]
+pub async fn cli_interface(args: &Args) -> anyhow::Result<()> {
     let (text_encoder, decoder, audio_encodec) = build_music_gen_parts(&args).await?;
-    cli_interface(
-        text_encoder,
-        decoder,
-        audio_encodec,
-        args.secs,
-        args.prompt,
-        args.output,
-        args.no_playback,
-    )
-    .await
+    let secs_re = Regex::new("--secs[ =](\\d+)")?;
+    let output_re = Regex::new(r"--output[ =]([.a-zA-Z_-]+)")?;
+
+    let audio_player = AudioManager::default();
+    // This variable holds the audio stream. The stream stops when this is dropped,
+    // so we need to maintain it referenced here.
+    let mut curr_stream: Option<AudioStream> = None;
+    let mut prompt = args.prompt.clone();
+    let mut secs = args.secs;
+    let mut output = args.output.clone();
+
+    loop {
+        if prompt.is_empty() {
+            if args.no_interactive {
+                return Err(anyhow!(
+                    "A prompt must be provided when not in interactive mode"
+                ));
+            }
+            print!(">>> ");
+            prompt = read!("{}\n");
+            if prompt == "exit" {
+                return Ok(());
+            }
+            if let Some(captures) = secs_re.captures(&prompt) {
+                if let Some(capture) = captures.get(1) {
+                    if let Ok(s) = usize::from_str(capture.as_str()) {
+                        secs = s;
+                    }
+                }
+            }
+            if let Some(captures) = output_re.captures(&prompt) {
+                if let Some(capture) = captures.get(1) {
+                    if !capture.is_empty() {
+                        output = capture.as_str().to_string()
+                    }
+                }
+            }
+        }
+        // First, encode the text.
+        let (last_hidden_state, attention_mask) = text_encoder.encode(&prompt)?;
+
+        // Second, generate tokens.
+        let max_len = secs * INPUT_IDS_BATCH_PER_SECOND;
+        let token_stream = decoder.generate_tokens(
+            last_hidden_state,
+            attention_mask,
+            Arc::new(AtomicBool::default()),
+            max_len,
+        )?;
+        let bar = LoadingBarFactor::bar("Generating audio");
+        let mut data = VecDeque::new();
+        while let Ok(tokens) = token_stream.recv() {
+            data.push_back(tokens?);
+            bar.update_elapsed_total(data.len(), max_len)
+        }
+
+        // Third, encode the tokens into audio.
+        let samples = audio_encodec.encode(data)?;
+
+        // Last, play the audio.
+        if !args.no_playback {
+            let samples_copy = samples.clone();
+            let stream = audio_player.play_from_queue(samples_copy);
+            if let Ok(stream) = stream {
+                curr_stream = Some(stream);
+            }
+        }
+        if !output.ends_with(".wav") {
+            output += ".wav";
+        }
+        audio_player.store_as_wav(samples, &output)?;
+        prompt = "".into();
+        if args.no_interactive {
+            break;
+        }
+    }
+
+    Ok(())
 }
 
 fn init_gpu() -> anyhow::Result<()> {
