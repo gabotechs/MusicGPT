@@ -1175,7 +1175,7 @@ dependencies = [
 
 [[package]]
 name = "musicgpt"
-version = "0.1.33"
+version = "0.1.34"
 dependencies = [
  "anyhow",
  "async-trait",
