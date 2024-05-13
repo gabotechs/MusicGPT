@@ -6,7 +6,7 @@ use anyhow::anyhow;
 use clap::{Parser, ValueEnum};
 use half::f16;
 use ort::{
-    CoreMLExecutionProvider, CUDAExecutionProvider, ExecutionProvider, TensorRTExecutionProvider,
+    CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider, TensorRTExecutionProvider,
 };
 use tokenizers::Tokenizer;
 use tokio::fs;
@@ -17,7 +17,6 @@ use crate::music_gen_audio_encodec::MusicGenAudioEncodec;
 use crate::music_gen_decoder::{MusicGenDecoder, MusicGenMergedDecoder, MusicGenSplitDecoder};
 use crate::music_gen_text_encoder::MusicGenTextEncoder;
 use crate::storage::Storage;
-use crate::ui::App;
 
 mod audio_manager;
 mod cli_interface;
@@ -84,10 +83,6 @@ struct Args {
     /// Do not play the audio automatically after inference.
     #[arg(long, default_value = "false")]
     no_playback: bool,
-
-    /// Runs the interactive UI.
-    #[arg(long, default_value = "false")]
-    ui: bool,
 }
 
 impl Args {
@@ -114,21 +109,16 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let (text_encoder, decoder, audio_encodec) = build_music_gen_parts(&args).await?;
-    if args.ui {
-        let app = App::try_from_music_gen(text_encoder, decoder, audio_encodec)?;
-        app.run()
-    } else {
-        cli_interface(
-            text_encoder,
-            decoder,
-            audio_encodec,
-            args.secs,
-            args.prompt,
-            args.output,
-            args.no_playback,
-        )
-        .await
-    }
+    cli_interface(
+        text_encoder,
+        decoder,
+        audio_encodec,
+        args.secs,
+        args.prompt,
+        args.output,
+        args.no_playback,
+    )
+    .await
 }
 
 fn init_gpu() -> anyhow::Result<()> {
