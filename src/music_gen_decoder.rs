@@ -1,6 +1,5 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 
@@ -27,7 +26,6 @@ pub trait MusicGenDecoder: Send + Sync {
         &self,
         last_hidden_state: ort::DynValue,
         encoder_attention_mask: ort::DynValue,
-        abort_controller: Arc<AtomicBool>,
         max_len: usize,
     ) -> ort::Result<Receiver<ort::Result<[i64; 4]>>>;
 }
@@ -46,7 +44,6 @@ impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenMergedDecoder<T> {
         &self,
         last_hidden_state: ort::DynValue,
         encoder_attention_mask: ort::DynValue,
-        abort_controller: Arc<AtomicBool>,
         max_len: usize,
     ) -> ort::Result<Receiver<ort::Result<[i64; 4]>>> {
         // Apparently, there's a setting in huggingface's transformers that says that
@@ -87,9 +84,6 @@ impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenMergedDecoder<T> {
                 }
                 inputs.use_cache_branch(false);
                 for _ in 0..max_len {
-                    if abort_controller.load(Ordering::Relaxed) {
-                        return Err(ort::Error::CustomError("Aborted".into()));
-                    }
                     let outputs = decoder_model_merged.run(inputs.ort())?;
                     let mut outputs = MusicGenOutputs::new(outputs);
 
@@ -138,7 +132,7 @@ impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenMergedDecoder<T> {
             if let Err(err) = result {
                 let _ = tx2.send(Err(err));
             }
-            Ok(())
+            Ok::<(), ort::Error>(())
         });
 
         Ok(rx)
@@ -160,7 +154,6 @@ impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenSplitDecoder<T> {
         &self,
         last_hidden_state: ort::DynValue,
         encoder_attention_mask: ort::DynValue,
-        abort_controller: Arc<AtomicBool>,
         max_len: usize,
     ) -> ort::Result<Receiver<ort::Result<[i64; 4]>>> {
         // Apparently, there's a setting in huggingface's transformers that says that
@@ -213,9 +206,6 @@ impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenSplitDecoder<T> {
         std::thread::spawn(move || {
             let result = {
                 for _ in 0..max_len {
-                    if abort_controller.load(Ordering::Relaxed) {
-                        return Err(ort::Error::CustomError("Aborted".into()));
-                    }
                     let [a, b, c, d] = delay_pattern_mask_ids.last_delayed_masked(pad_token_id);
                     inputs.input_ids(ort::Tensor::from_array((
                         [8, 1],
@@ -258,7 +248,7 @@ impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenSplitDecoder<T> {
             if let Err(err) = result {
                 let _ = tx2.send(Err(err));
             }
-            Ok(())
+            Ok::<(), ort::Error>(())
         });
 
         Ok(rx)
