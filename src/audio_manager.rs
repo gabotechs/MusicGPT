@@ -39,16 +39,6 @@ unsafe impl Sync for AudioStream {}
 
 
 impl AudioManager {
-    pub fn play_from_wav(&self, path: PathBuf) -> anyhow::Result<AudioStream> {
-        let mut reader = hound::WavReader::open(path)?;
-        let samples = reader.samples::<f32>();
-        let mut v = VecDeque::new();
-        for sample in samples.into_iter() {
-            v.push_back(sample?);
-        }
-        self.play_from_queue(v)
-    }
-    
     pub fn play_from_queue(&self, mut v: VecDeque<f32>) -> anyhow::Result<AudioStream> {
         let time = 1000 * v.len() / self.sampling_rate as usize;
         let channels = self.n_channels;

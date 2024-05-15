@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use crate::audio_manager::{AudioManager, AudioStream};
@@ -23,7 +22,6 @@ use crate::music_gen_text_encoder::MusicGenTextEncoder;
 use crate::storage::Storage;
 
 mod audio_manager;
-mod cli_interface;
 mod delay_pattern_mask_ids;
 mod loading_bar_factory;
 mod logits;
@@ -115,14 +113,23 @@ async fn main() -> anyhow::Result<()> {
         println!("WARNING: GPU support is experimental, it might not work on most platforms");
         init_gpu()?;
     }
-
-    cli_interface(&args).await
+    
+    if args.prompt.is_empty() {
+        let (text_encoder, decoder, audio_encodec) = build_music_gen_parts(&args).await?;
+        ui::run(ui::MusicGenJobProcessor {
+            text_encoder,
+            decoder,
+            audio_encodec,
+        }, 8642, true).await
+    } else {
+        cli_interface(&args).await
+    }
 }
 
 const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
 
 #[allow(unused_assignments, unused_variables)]
-pub async fn cli_interface(args: &Args) -> anyhow::Result<()> {
+async fn cli_interface(args: &Args) -> anyhow::Result<()> {
     let (text_encoder, decoder, audio_encodec) = build_music_gen_parts(&args).await?;
     let secs_re = Regex::new("--secs[ =](\\d+)")?;
     let output_re = Regex::new(r"--output[ =]([.a-zA-Z_-]+)")?;
@@ -170,7 +177,6 @@ pub async fn cli_interface(args: &Args) -> anyhow::Result<()> {
         let token_stream = decoder.generate_tokens(
             last_hidden_state,
             attention_mask,
-            Arc::new(AtomicBool::default()),
             max_len,
         )?;
         let bar = LoadingBarFactor::bar("Generating audio");

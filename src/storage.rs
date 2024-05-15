@@ -19,6 +19,16 @@ impl Storage {
         let (abs_file_path, _, _) = Self::relative_file_to_path_buf(relative_file);
         fs::try_exists(abs_file_path).await
     }
+    
+    pub fn data_dir() -> PathBuf {
+        PROJECT_DIRS.data_dir().to_path_buf()
+    }
+
+    pub fn prepare_file_path_sync(relative_file: &str) -> std::io::Result<PathBuf> {
+        let (abs_file_path, abs_file_dir, _) = Self::relative_file_to_path_buf(relative_file);
+        std::fs::create_dir_all(abs_file_dir.clone())?;
+        Ok(abs_file_path)
+    }
 
     /// Loads a remote from the local data directory, downloading it from
     /// the remote endpoint if necessary
