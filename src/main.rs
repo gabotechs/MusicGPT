@@ -120,7 +120,7 @@ async fn main() -> anyhow::Result<()> {
             text_encoder,
             decoder,
             audio_encodec,
-        }, 8642).await
+        }, 8642, true).await
     } else {
         cli_interface(&args).await
     }

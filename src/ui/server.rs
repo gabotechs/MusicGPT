@@ -15,7 +15,7 @@ async fn web_app() -> Html<&'static str> {
     Html(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/web/dist/index.html")))
 }
 
-pub async fn run<T: JobProcessor + 'static>(processor: T, port: usize) -> anyhow::Result<()> {
+pub async fn run<T: JobProcessor + 'static>(processor: T, port: usize, open: bool) -> anyhow::Result<()> {
     let (ai_tx, ai_rx) = BackendAi::new(processor).run();
     let ai_rx = Arc::new(Mutex::new(ai_rx));
 
@@ -32,7 +32,9 @@ pub async fn run<T: JobProcessor + 'static>(processor: T, port: usize) -> anyhow
         );
 
     let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
-    let _ = open::that(format!("http://localhost:{port}"));
+    if open {
+        let _ = open::that(format!("http://localhost:{port}"));
+    }
     
     Ok(axum::serve(listener, app).await?)
 }
@@ -56,7 +58,7 @@ mod tests {
 
     #[tokio::test]
     async fn sending_a_job_processes_it() -> anyhow::Result<()> {
-        tokio::spawn(run(DummyJobProcessor::default(), 8642));
+        tokio::spawn(run(DummyJobProcessor::default(), 8642, false));
 
         ws_works("ws://localhost:8642/ws").await?;
         Ok(())
@@ -64,7 +66,7 @@ mod tests {
 
     #[tokio::test]
     async fn second_connection_fails_if_first_is_still_active() -> anyhow::Result<()> {
-        tokio::spawn(run(DummyJobProcessor::default(), 8643));
+        tokio::spawn(run(DummyJobProcessor::default(), 8643, false));
 
         let _ = ws_works("ws://localhost:8643/ws").await?;
         ws_closes_connection("ws://localhost:8643/ws").await?;
@@ -74,7 +76,7 @@ mod tests {
 
     #[tokio::test]
     async fn second_connection_succeeds_if_first_releases() -> anyhow::Result<()> {
-        tokio::spawn(run(DummyJobProcessor::default(), 8644));
+        tokio::spawn(run(DummyJobProcessor::default(), 8644, false));
 
         {
             let mut ws = ws_works("ws://localhost:8644/ws").await?;
@@ -92,7 +94,7 @@ mod tests {
     #[tokio::test]
     async fn can_abort_a_job() -> anyhow::Result<()> {
         let processor = DummyJobProcessor::new(Duration::from_millis(100));
-        tokio::spawn(run(processor, 8645));
+        tokio::spawn(run(processor, 8645, false));
 
         let (mut ws_stream, _) = connect_async("ws://localhost:8645/ws").await?;
         let id = Uuid::new_v4();

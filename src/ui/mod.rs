@@ -19,7 +19,7 @@ mod tests {
     #[ignore]
     #[tokio::test]
     async fn spawn_dummy_server() -> anyhow::Result<()> {
-        run(DummyJobProcessor::new(Duration::from_millis(100)), 8642).await
+        run(DummyJobProcessor::new(Duration::from_millis(100)), 8642, false).await
     }
 
     #[ignore]
