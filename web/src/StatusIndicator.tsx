@@ -1,5 +1,6 @@
-import { useBackend } from "./useBackend.ts";
 import { ReadyState } from "react-use-websocket";
+
+import { useBackend } from "./backend/useBackend.ts";
 import { ErrorIcon } from "./Icons/ErrorIcon.tsx";
 import { WarningIcon } from "./Icons/WarningIcon.tsx";
 import { CheckIcon } from "./Icons/CheckIcon.tsx";

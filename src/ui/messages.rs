@@ -142,7 +142,7 @@ mod tests {
     fn export_bindings() -> anyhow::Result<()> {
         specta::export::ts_with_cfg(
             PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("web/src/bindings.ts")
+                .join("web/src/backend/bindings.ts")
                 .to_str()
                 .unwrap(),
             &ExportConfiguration::default().bigint(BigIntExportBehavior::Number),

@@ -1,14 +1,14 @@
 import { useEffect, useRef } from "react";
 
-import ChatInput from "./ChatInput";
-import { ChatMessage, useChat } from "./useChat.ts";
+import ChatInput from "./components/ChatInput.tsx";
+import { ChatMessage, useChat } from "./backend/useChat.ts";
 import { StatusIndicator } from "./StatusIndicator.tsx";
-import UserQuestion from "./UserMessage.tsx";
-import AudioGenerating from "./AudioGenerating.tsx";
-import { AudioSuccess } from "./AudioSuccess.tsx";
-import AudioFailure from "./AudioFailure.tsx";
-import ThemeToggle from "./ThemeToggle.tsx";
-import { useThemeToggle } from "./ThemeToggleHook.tsx";
+import UserQuestion from "./components/UserMessage.tsx";
+import AudioGenerating from "./components/AudioGenerating.tsx";
+import { AudioSuccess } from "./components/AudioSuccess.tsx";
+import AudioFailure from "./components/AudioFailure.tsx";
+import ThemeToggle from "./components/ThemeToggle.tsx";
+import { useThemeToggle } from "./components/ThemeToggleHook.tsx";
 
 
 function App () {

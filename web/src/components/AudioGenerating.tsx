@@ -1,5 +1,5 @@
 import React from 'react';
-import { LoadingIcon } from "./Icons/LoadingIcon.tsx";
+import { LoadingIcon } from "../Icons/LoadingIcon.tsx";
 
 interface GeneratingAudioProps {
   className?: string;

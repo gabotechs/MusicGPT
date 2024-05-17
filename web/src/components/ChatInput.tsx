@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import { LoadingIcon } from "./Icons/LoadingIcon.tsx";
-import { StopIcon } from "./Icons/StopIcon.tsx";
-import { SendIcon } from "./Icons/SendIcon.tsx";
+import { LoadingIcon } from "../Icons/LoadingIcon.tsx";
+import { StopIcon } from "../Icons/StopIcon.tsx";
+import { SendIcon } from "../Icons/SendIcon.tsx";
 
 export interface ChatInputProps {
   className?: string;
