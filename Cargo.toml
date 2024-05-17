@@ -35,6 +35,7 @@ regex = "1.10.4"
 async-stream = "0.3.5"
 
 # Web UI deps, potentially hide behind a flag
+tokio-util = "0.7.11"
 tokio-tungstenite = "0.21.0"
 specta = { version = "1.0.5", features = ["uuid", "serde", "typescript", "export"] }
 axum = { version = "0.7.5", features = ["ws"] }

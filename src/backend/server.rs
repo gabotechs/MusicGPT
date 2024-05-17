@@ -1,16 +1,14 @@
-use std::sync::Arc;
-
 use axum::extract::WebSocketUpgrade;
 use axum::response::Html;
 use axum::routing::get;
 use axum::Router;
-use tokio::sync::Mutex;
 use tower_http::services::ServeDir;
 
 use crate::storage::AppFs;
-use crate::ui::backend_ai::{BackendAi, JobProcessor};
-use crate::ui::messages::Init;
-use crate::ui::ws_handler::WsHandler;
+use crate::backend::audio_generation_fanout::audio_generation_fanout;
+use crate::backend::audio_generation_backend::{AudioGenerationBackend, JobProcessor};
+use crate::backend::ws_handler::WsHandler;
+use crate::backend::music_gpt_ws_handler::{Info, MusicGptWsHandler};
 
 async fn web_app() -> Html<&'static str> {
     Html(include_str!(concat!(
@@ -20,31 +18,33 @@ async fn web_app() -> Html<&'static str> {
 }
 
 pub async fn run<T: JobProcessor + 'static>(
-    app_fs: AppFs,
+    storage: AppFs,
     processor: T,
     port: usize,
     open: bool,
 ) -> anyhow::Result<()> {
     let model = processor.name();
     let device = processor.device();
-    let init = Init { model, device };
 
-    let (ai_tx, ai_rx) = BackendAi::new(processor).run();
-    let ai_rx = Arc::new(Mutex::new(ai_rx));
+    let (ai_tx, ai_rx) = AudioGenerationBackend::new(processor).run();
+    let ai_broadcast_tx = audio_generation_fanout(ai_rx, storage.clone());
+
+    let root_dir = storage.root.clone();
+    let ws_handler = MusicGptWsHandler {
+        ai_tx,
+        storage,
+        info: Info { model, device },
+        ai_broadcast_tx,
+    };
 
     let app = Router::new()
         .route("/", get(web_app))
-        .nest_service("/files", ServeDir::new(app_fs.root.clone()))
+        .nest_service("/files", ServeDir::new(root_dir))
         .route(
             "/ws",
             get(|ws: WebSocketUpgrade| async move {
-                let handler = WsHandler {
-                    ai_tx: ai_tx.clone(),
-                    ai_rx: ai_rx.clone(),
-                    storage: app_fs.clone(),
-                    info: init,
-                };
-                ws.on_upgrade(move |ws| handler.handle(ws))
+                let ws_handler = ws_handler.clone();
+                ws.on_upgrade(move |ws| ws_handler.handle(ws))
             }),
         );
 
@@ -59,114 +59,36 @@ pub async fn run<T: JobProcessor + 'static>(
 #[cfg(test)]
 mod tests {
     use std::path::Path;
+    use std::sync::atomic::{AtomicU16, Ordering};
     use std::time::Duration;
 
     use futures_util::{SinkExt, StreamExt};
     use serde::de::DeserializeOwned;
     use serde::Serialize;
-    use tokio::net::TcpStream;
-    use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
+    use tokio_tungstenite::connect_async;
     use uuid::Uuid;
 
-    use crate::ui::_test_utils::DummyJobProcessor;
-    use crate::ui::messages::{AbortGeneration, GenerateAudio, InboundMsg, OutboundMsg};
+    use crate::backend::_test_utils::DummyJobProcessor;
+    use crate::backend::music_gpt_ws_handler::{
+        AbortGeneration, GenerateAudio, InboundMsg, OutboundMsg,
+    };
 
     use super::*;
 
-    #[tokio::test]
-    async fn sending_a_job_processes_it() -> anyhow::Result<()> {
+    static PORT: AtomicU16 = AtomicU16::new(8643);
+
+    fn spawn<P: JobProcessor + 'static>(processor: P) -> usize {
         let app_fs = AppFs::new(Path::new("/tmp/ws_server_tests"));
-        let processor = DummyJobProcessor::default();
-        tokio::spawn(run(app_fs, processor, 8642, false));
-
-        ws_works("ws://localhost:8642/ws").await?;
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn second_connection_fails_if_first_is_still_active() -> anyhow::Result<()> {
-        let app_fs = AppFs::new(Path::new("/tmp/ws_server_tests"));
-        let processor = DummyJobProcessor::default();
-        tokio::spawn(run(app_fs, processor, 8643, false));
-
-        let _ = ws_works("ws://localhost:8643/ws").await?;
-        ws_closes_connection("ws://localhost:8643/ws").await?;
-
-        Ok(())
+        let port = PORT.fetch_add(1, Ordering::SeqCst) as usize;
+        tokio::spawn(run(app_fs, processor, port, false));
+        port
     }
 
     #[tokio::test]
-    async fn second_connection_succeeds_if_first_releases() -> anyhow::Result<()> {
-        let app_fs = AppFs::new(Path::new("/tmp/ws_server_tests"));
-        let processor = DummyJobProcessor::default();
-        tokio::spawn(run(app_fs, processor, 8644, false));
+    async fn sending_a_job_processes_it() -> anyhow::Result<()> {
+        let port = spawn(DummyJobProcessor::default());
 
-        {
-            let mut ws = ws_works("ws://localhost:8644/ws").await?;
-            ws_closes_connection("ws://localhost:8644/ws").await?;
-            ws.close(None).await?;
-            // leave some room for tearing down old connection.
-            tokio::time::sleep(Duration::from_millis(300)).await;
-        }
-
-        ws_works("ws://localhost:8644/ws").await?;
-
-        Ok(())
-    }
-
-    #[tokio::test]
-    async fn can_abort_a_job() -> anyhow::Result<()> {
-        let app_fs = AppFs::new(Path::new("/tmp/ws_server_tests"));
-        let processor = DummyJobProcessor::new(Duration::from_millis(100));
-        tokio::spawn(run(app_fs, processor, 8645, false));
-
-        let (mut ws_stream, _) = connect_async("ws://localhost:8645/ws").await?;
-        let id = Uuid::new_v4();
-        let chat_id = Uuid::new_v4();
-        let msg = InboundMsg::GenerateAudio(GenerateAudio {
-            id,
-            chat_id,
-            prompt: "Create a cool song".to_string(),
-            secs: 4,
-        });
-        ws_stream.send(msg.to_tungstenite_msg()).await?;
-
-        tokio::time::sleep(Duration::from_millis(150)).await;
-        ws_stream
-            .send(InboundMsg::AbortGeneration(AbortGeneration { id, chat_id }).to_tungstenite_msg())
-            .await?;
-        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        msg.unwrap_init();
-
-        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        let p = msg.unwrap_progress();
-        assert_eq!(p.id, id);
-        assert_eq!(p.chat_id, chat_id);
-        assert_eq!(p.progress, 0.25);
-
-        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        let p = msg.unwrap_progress();
-        assert_eq!(p.id, id);
-        assert_eq!(p.chat_id, chat_id);
-        assert_eq!(p.progress, 0.5);
-
-        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        let p = msg.unwrap_err();
-        assert_eq!(p.id, id);
-        assert_eq!(p.chat_id, chat_id);
-        assert_eq!(p.error, "Aborted");
-
-        Ok(())
-    }
-
-    async fn ws_closes_connection(url: &str) -> anyhow::Result<()> {
-        let (mut ws, _) = connect_async(url).await?;
-        assert!(ws.next().await.unwrap()?.is_close());
-        Ok(())
-    }
-
-    async fn ws_works(url: &str) -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
-        let (mut ws_stream, _) = connect_async(url).await?;
+        let (mut ws_stream, _) = connect_async(&format!("ws://localhost:{port}/ws")).await?;
         let id = Uuid::new_v4();
         let chat_id = Uuid::new_v4();
         let msg = InboundMsg::GenerateAudio(GenerateAudio {
@@ -179,6 +101,9 @@ mod tests {
 
         let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
         msg.unwrap_init();
+
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        msg.unwrap_start();
 
         let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
         let p = msg.unwrap_progress();
@@ -210,7 +135,96 @@ mod tests {
         assert_eq!(p.chat_id, chat_id);
         assert_eq!(p.relpath, format!("audios/{id}.wav"));
 
-        Ok(ws_stream)
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn can_abort_a_job() -> anyhow::Result<()> {
+        let port = spawn(DummyJobProcessor::new(Duration::from_millis(100)));
+
+        let (mut ws_stream, _) = connect_async(&format!("ws://localhost:{port}/ws")).await?;
+        let id = Uuid::new_v4();
+        let chat_id = Uuid::new_v4();
+        let msg = InboundMsg::GenerateAudio(GenerateAudio {
+            id,
+            chat_id,
+            prompt: "Create a cool song".to_string(),
+            secs: 4,
+        });
+        ws_stream.send(msg.to_tungstenite_msg()).await?;
+
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        ws_stream
+            .send(InboundMsg::AbortGeneration(AbortGeneration { id, chat_id }).to_tungstenite_msg())
+            .await?;
+
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        msg.unwrap_init();
+
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        msg.unwrap_start();
+
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        let p = msg.unwrap_progress();
+        assert_eq!(p.id, id);
+        assert_eq!(p.chat_id, chat_id);
+        assert_eq!(p.progress, 0.25);
+
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        let p = msg.unwrap_progress();
+        assert_eq!(p.id, id);
+        assert_eq!(p.chat_id, chat_id);
+        assert_eq!(p.progress, 0.5);
+
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        let p = msg.unwrap_err();
+        assert_eq!(p.id, id);
+        assert_eq!(p.chat_id, chat_id);
+        assert_eq!(p.error, "Aborted");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn handles_job_failures() -> anyhow::Result<()> {
+        let port = spawn(DummyJobProcessor::default());
+
+        let (mut ws_stream, _) = connect_async(&format!("ws://localhost:{port}/ws")).await?;
+        let id = Uuid::new_v4();
+        let chat_id = Uuid::new_v4();
+        let msg = InboundMsg::GenerateAudio(GenerateAudio {
+            id,
+            chat_id,
+            prompt: "fail at 2".to_string(),
+            secs: 4,
+        });
+        ws_stream.send(msg.to_tungstenite_msg()).await?;
+
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        msg.unwrap_init();
+
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        msg.unwrap_start();
+
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        let p = msg.unwrap_progress();
+        assert_eq!(p.id, id);
+        assert_eq!(p.chat_id, chat_id);
+        assert_eq!(p.progress, 0.25);
+
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        let p = msg.unwrap_progress();
+        assert_eq!(p.id, id);
+        assert_eq!(p.chat_id, chat_id);
+        assert_eq!(p.progress, 0.5);
+
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        let p = msg.unwrap_err();
+        assert_eq!(p.id, id);
+        assert_eq!(p.chat_id, chat_id);
+        assert_eq!(p.error, "Failed at 2");
+
+        Ok(())
     }
 
     trait TungsteniteMsg: Sized {

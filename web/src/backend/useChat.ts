@@ -34,8 +34,8 @@ export function useChat () {
   useEffect(() => {
     if (last == null) {
       // do nothing
-    } else if ('Progress' in last) {
-      const { id, progress } = last.Progress
+    } else if ('Generation' in last && 'Progress' in last.Generation) {
+      const { id, progress } = last.Generation.Progress
       setHistory(prev => {
         const newest = prev[prev.length - 1] as undefined | ChatMessage;
         if (newest?.id === id && newest.type === 'ai') {
@@ -43,8 +43,8 @@ export function useChat () {
         }
         return [...prev]
       })
-    } else if ('Result' in last) {
-      const { id, relpath } = last.Result
+    } else if ('Generation' in last && 'Result' in last.Generation) {
+      const { id, relpath } = last.Generation.Result
       setHistory(prev => {
         const newest = prev[prev.length - 1] as undefined | ChatMessage;
         if (newest?.id === id && newest.type === 'ai') {
@@ -53,8 +53,8 @@ export function useChat () {
         }
         return [...prev]
       })
-    } else if ('Error' in last) {
-      const { id, error } = last.Error
+    } else if ('Generation' in last && 'Error' in last.Generation) {
+      const { id, error } = last.Generation.Error
       setHistory(prev => {
         const newest = prev[prev.length - 1] as undefined | ChatMessage;
         if (newest?.id === id && newest.type === 'ai') {
@@ -63,8 +63,8 @@ export function useChat () {
         }
         return [...prev]
       })
-    } else if ('History' in last) {
-      const [, history] = last.History
+    } else if ('ChatHistory' in last) {
+      const [, history] = last.ChatHistory
       const newHistory: ChatMessage[] = []
       for (const entry of history) {
         if ('User' in entry) {
@@ -77,7 +77,8 @@ export function useChat () {
           newHistory.push({
             type: 'ai',
             id: entry.Ai.id,
-            url: entry.Ai.relpath,
+            url: entry.Ai.relpath || undefined,
+            error: entry.Ai.error || undefined,
             progress: 1,
           })
         }

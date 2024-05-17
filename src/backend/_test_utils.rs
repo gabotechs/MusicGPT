@@ -3,58 +3,72 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 
-use crate::ui::backend_ai::{BackendAiOutboundMsg, JobProcessor};
-use crate::ui::messages::{AudioGenerationError, AudioGenerationProgress, AudioGenerationResult, Init, OutboundMsg};
+use crate::backend::audio_generation_fanout::{AudioGenerationError, AudioGenerationProgress, AudioGenerationResult, AudioGenerationStart, GenerationMessage};
+use crate::backend::audio_generation_backend::{AudioGenerationRequest, BackendOutboundMsg, JobProcessor};
+use crate::backend::music_gpt_ws_handler::{Info, OutboundMsg};
 
 impl OutboundMsg {
-    pub(crate) fn unwrap_init(self) -> Init {
+    pub(crate) fn unwrap_init(self) -> Info {
         match self {
             OutboundMsg::Init(p) => p,
             _ => panic!("msg was not OutboundMsg::Init, it was {self:?}"),
         }
     }
 
+    pub(crate) fn unwrap_start(self) -> AudioGenerationStart {
+        match self {
+            OutboundMsg::Generation(GenerationMessage::Start(p)) => p,
+            _ => panic!("msg was not GenerationMessage::Start, it was {self:?}"),
+        }
+    }
 
     pub(crate) fn unwrap_progress(self) -> AudioGenerationProgress {
         match self {
-            OutboundMsg::Progress(p) => p,
-            _ => panic!("msg was not OutboundMsg::Progress, it was {self:?}"),
+            OutboundMsg::Generation(GenerationMessage::Progress(p)) => p,
+            _ => panic!("msg was not GenerationMessage::Progress, it was {self:?}"),
         }
     }
 
     pub(crate) fn unwrap_result(self) -> AudioGenerationResult {
         match self {
-            OutboundMsg::Result(p) => p,
-            _ => panic!("msg was not OutboundMsg::Result, it was {self:?}"),
+            OutboundMsg::Generation(GenerationMessage::Result(p)) => p,
+            _ => panic!("msg was not GenerationMessage::Result, it was {self:?}"),
         }
     }
 
     pub(crate) fn unwrap_err(self) -> AudioGenerationError {
         match self {
-            OutboundMsg::Error(p) => p,
-            _ => panic!("msg was not OutboundMsg::Error, it was {self:?}"),
+            OutboundMsg::Generation(GenerationMessage::Error(p)) => p,
+            _ => panic!("msg was not GenerationMessage::Error, it was {self:?}"),
         }
     }
 }
 
-impl BackendAiOutboundMsg {
+impl BackendOutboundMsg {
+    pub(crate) fn unwrap_start(self) -> AudioGenerationRequest {
+        match self {
+            BackendOutboundMsg::Start(p) => p,
+            _ => panic!("msg was not Progress, it was {self:?}"),
+        }
+    }
+    
     pub(crate) fn unwrap_progress(self) -> (String, f32) {
         match self {
-            BackendAiOutboundMsg::Progress(p) => p,
+            BackendOutboundMsg::Progress(p) => p,
             _ => panic!("msg was not Progress, it was {self:?}"),
         }
     }
 
     pub(crate) fn unwrap_response(self) -> (String, VecDeque<f32>) {
         match self {
-            BackendAiOutboundMsg::Response(p) => p,
+            BackendOutboundMsg::Response(p) => p,
             _ => panic!("msg was not Response, it was {self:?}"),
         }
     }
 
     pub(crate) fn unwrap_err(self) -> (String, String) {
         match self {
-            BackendAiOutboundMsg::Failure(p) => p,
+            BackendOutboundMsg::Failure(p) => p,
             _ => panic!("msg was not Failure, it was {self:?}"),
         }
     }

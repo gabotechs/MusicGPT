@@ -1,13 +1,13 @@
 import useWebSocket from "react-use-websocket";
 import { useCallback, useEffect, useState } from "react";
-import { InboundMsg, Init, OutboundMsg } from "./bindings.ts";
+import { InboundMsg, Info, OutboundMsg } from "./bindings.ts";
 
 const BACKEND_URL: string = import.meta.env.VITE_BACKEND_URL ?? window.location.origin
 export const WS_URL = `${BACKEND_URL.replace('http', 'ws')}/ws`
 export const FILES_URL = `${BACKEND_URL}/files`
 
 export function useBackend () {
-  const [info, setInfo] = useState<Init>()
+  const [info, setInfo] = useState<Info>()
 
   const [closeEvent, setCloseEvent] = useState<WebSocketEventMap['close']>()
 
