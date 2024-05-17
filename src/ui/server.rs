@@ -1,4 +1,3 @@
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use axum::extract::WebSocketUpgrade;
@@ -43,7 +42,6 @@ pub async fn run<T: JobProcessor + 'static>(
                     ai_tx: ai_tx.clone(),
                     ai_rx: ai_rx.clone(),
                     storage: app_fs.clone(),
-                    end: Arc::new(AtomicBool::default()),
                     info: init,
                 };
                 ws.on_upgrade(move |ws| handler.handle(ws))

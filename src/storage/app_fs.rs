@@ -1,8 +1,6 @@
 use async_trait::async_trait;
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
-use rand::distributions::Alphanumeric;
-use rand::{Rng, thread_rng};
 
 use crate::storage::{Storage, StorageFile};
 
@@ -55,14 +53,14 @@ impl Storage for AppFs {
         let mut dir = tokio::fs::read_dir(abs_dir).await?;
         while let Some(entry) = dir.next_entry().await? {
             let Ok(meta) = entry.metadata().await else {
-                continue
+                continue;
             };
             if !meta.is_file() {
-                continue
+                continue;
             }
             let entry_path = entry.path();
             let Ok(rel) = entry_path.strip_prefix(&self.root) else {
-                continue
+                continue;
             };
             files.push(rel.display().to_string())
         }
@@ -86,9 +84,7 @@ lazy_static! {
 
 impl AppFs {
     pub fn new(value: impl Into<std::path::PathBuf>) -> Self {
-        Self {
-            root: value.into(),
-        }
+        Self { root: value.into() }
     }
 
     pub fn path_buf(&self, path: &str) -> std::path::PathBuf {
@@ -122,14 +118,21 @@ impl AppFs {
         for element in relative_file_elements {
             abs_file_dir = abs_file_dir.join(element);
         }
-        (abs_file_dir.join(file_name), abs_file_dir, file_name.to_string())
+        (
+            abs_file_dir.join(file_name),
+            abs_file_dir,
+            file_name.to_string(),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use rand::distributions::Alphanumeric;
+    use rand::{thread_rng, Rng};
+
     use crate::storage::tests::test_storage;
-    use super::*;
+    use crate::storage::AppFs;
 
     fn rand_string() -> String {
         thread_rng()

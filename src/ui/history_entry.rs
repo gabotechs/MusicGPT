@@ -22,8 +22,7 @@ impl HistoryEntry {
         let mut result = vec![];
         for file in storage.list(&format!("chats/{chat_id}")).await? {
             if let Some(content) = storage.read(&file).await? {
-                let entry: HistoryEntry = serde_json::from_slice(&content)?;
-                result.push(entry)
+                result.push(serde_json::from_slice(&content)?)
             }
         }
 

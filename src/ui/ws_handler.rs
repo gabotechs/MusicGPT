@@ -7,6 +7,7 @@ use std::time::Duration;
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
+use scopeguard::defer;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use uuid::Uuid;
@@ -16,7 +17,7 @@ use crate::storage::Storage;
 use crate::ui::backend_ai::{AudioGenerationRequest, BackendAiInboundMsg, BackendAiOutboundMsg};
 use crate::ui::messages::{
     AiHistoryEntry, AudioGenerationError, AudioGenerationProgress, AudioGenerationResult,
-    HistoryEntry, InboundMsg, Init, OutboundMsg, UserHistoryEntry,
+    GenerateAudio, HistoryEntry, InboundMsg, Init, OutboundMsg, UserHistoryEntry,
 };
 
 #[derive(Clone)]
@@ -25,22 +26,25 @@ pub struct WsHandler<S: Storage> {
     pub ai_rx: Arc<Mutex<Receiver<BackendAiOutboundMsg>>>,
     pub ai_tx: Sender<BackendAiInboundMsg>,
     pub info: Init,
-    pub end: Arc<AtomicBool>,
 }
 
 impl<S: Storage + 'static> WsHandler<S> {
-    async fn ai_reception_loop(self, tx: Arc<Mutex<SplitSink<WebSocket, Message>>>) {
+    async fn ai_reception_loop(
+        self,
+        tx: Arc<Mutex<SplitSink<WebSocket, Message>>>,
+        end: Arc<AtomicBool>,
+    ) {
         let ai_rx = self.ai_rx.lock().await;
         let audio_manager = AudioManager::default();
         loop {
             // keep polling the ai channel until there's a message.
-            let ai_msg = if let Ok(ai_msg) = ai_rx.try_recv() {
-                ai_msg
-            } else if self.end.load(Ordering::SeqCst) {
-                return;
-            } else {
-                tokio::time::sleep(Duration::from_millis(10)).await;
-                continue;
+            let Ok(ai_msg) = ai_rx.try_recv() else {
+                if end.load(Ordering::SeqCst) {
+                    return;
+                } else {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    continue;
+                }
             };
             // Map the message to something sendable to the WS connection.
             let outbound_msg = match ai_msg {
@@ -87,7 +91,8 @@ impl<S: Storage + 'static> WsHandler<S> {
             };
             // Send it to the ws connection.
             {
-                let _ = tx.lock().await.send(outbound_msg.to_msg()).await;
+                let mut tx = tx.lock().await;
+                let _ = tx.send(outbound_msg.to_msg()).await;
             }
         }
     }
@@ -96,35 +101,38 @@ impl<S: Storage + 'static> WsHandler<S> {
         self,
         tx: Arc<Mutex<SplitSink<WebSocket, Message>>>,
         mut rx: SplitStream<WebSocket>,
+        end: Arc<AtomicBool>,
     ) -> anyhow::Result<()> {
+        defer! {
+            // When this function finishes, any other asynchronous task should also end.
+            end.store(true, Ordering::SeqCst)
+        }
+
+        {
+            // Send some initialization messages
+            let mut tx = tx.lock().await;
+            let _ = tx.send(OutboundMsg::Init(self.info.clone()).to_msg()).await;
+        }
+
         while let Some(msg_or_err) = rx.next().await {
             let msg = msg_or_err?;
             let msg = match msg {
                 Message::Text(_) | Message::Binary(_) => InboundMsg::from_msg(msg)?,
                 Message::Close(_) => break,
-                Message::Ping(_) => continue,
-                Message::Pong(_) => continue,
+                _ => continue,
             };
             match msg {
                 InboundMsg::GenerateAudio(req) => {
-                    let _ = self
-                        .ai_tx
-                        .send(BackendAiInboundMsg::Request(AudioGenerationRequest {
-                            id: IdPair((req.chat_id, req.id)).to_string(),
-                            prompt: req.prompt.clone(),
-                            secs: req.secs,
-                        }));
-                    let entry = HistoryEntry::User(UserHistoryEntry {
-                        id: req.id,
-                        chat_id: req.chat_id,
-                        text: req.prompt,
-                    });
+                    // An audio generation was requested this will:
+                    // - store a new entry in the chat history
+                    // - send the audio generation request to the AI
+                    let entry: HistoryEntry = req.clone().into();
+                    let _ = self.ai_tx.send(req.into());
                     let _ = entry.save(&self.storage).await;
                 }
                 InboundMsg::AbortGeneration(req) => {
-                    let _ = self.ai_tx.send(BackendAiInboundMsg::Abort(
-                        IdPair((req.chat_id, req.id)).to_string(),
-                    ));
+                    let id = IdPair((req.chat_id, req.id)).to_string();
+                    let _ = self.ai_tx.send(BackendAiInboundMsg::Abort(id));
                 }
                 InboundMsg::RetrieveHistory(req) => {
                     let history = HistoryEntry::load_from_chat(&self.storage, req.chat_id)
@@ -132,7 +140,8 @@ impl<S: Storage + 'static> WsHandler<S> {
                         .unwrap_or_default();
                     let msg = OutboundMsg::History((req.chat_id, history));
                     {
-                        let _ = tx.lock().await.send(msg.to_msg()).await;
+                        let mut tx = tx.lock().await;
+                        let _ = tx.send(msg.to_msg()).await;
                     }
                 }
             }
@@ -154,18 +163,32 @@ impl<S: Storage + 'static> WsHandler<S> {
                 return;
             }
         };
-        let (mut tx, rx) = ws.split();
-        let _ = tx.send(OutboundMsg::Init(self.info.clone()).to_msg()).await;
+        let (tx, rx) = ws.split();
         let tx = Arc::new(Mutex::new(tx));
+        let end = Arc::new(AtomicBool::default());
 
-        tokio::spawn(self.clone().ai_reception_loop(tx.clone()));
-        tokio::spawn(self.ws_reception_loop(tx, rx));
+        tokio::spawn(self.clone().ai_reception_loop(tx.clone(), end.clone()));
+        tokio::spawn(self.ws_reception_loop(tx, rx, end));
     }
 }
 
-impl<S: Storage> Drop for WsHandler<S> {
-    fn drop(&mut self) {
-        self.end.store(true, Ordering::SeqCst)
+impl From<GenerateAudio> for BackendAiInboundMsg {
+    fn from(value: GenerateAudio) -> Self {
+        BackendAiInboundMsg::Request(AudioGenerationRequest {
+            id: IdPair((value.chat_id, value.id)).to_string(),
+            prompt: value.prompt,
+            secs: value.secs,
+        })
+    }
+}
+
+impl From<GenerateAudio> for HistoryEntry {
+    fn from(value: GenerateAudio) -> Self {
+        HistoryEntry::User(UserHistoryEntry {
+            id: value.id,
+            chat_id: value.chat_id,
+            text: value.prompt,
+        })
     }
 }
 
