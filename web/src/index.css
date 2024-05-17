@@ -1,3 +1,27 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+    --background-color: white;
+    --text-color: black;
+    --text-faded-color: #9d9d9d;
+    --card-background-color: #efefef;
+    --input-background-color: white;
+    --input-text-color: black;
+    --input-border-color: #d1d5db;
+    --button-background-color: #3b82f6;
+    --button-text-color: white;
+}
+
+.dark {
+    --background-color: #1f2937;
+    --text-color: white;
+    --text-faded-color: #9d9d9d;
+    --card-background-color: #464857;
+    --input-background-color: #374151;
+    --input-text-color: white;
+    --input-border-color: #4b5563;
+    --button-background-color: #60a5fa;
+    --button-text-color: white;
+}

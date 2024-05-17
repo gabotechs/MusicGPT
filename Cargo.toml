@@ -40,6 +40,7 @@ specta = { version = "1.0.5", features = ["uuid", "serde", "typescript", "export
 axum = { version = "0.7.5", features = ["ws"] }
 tower-http = { version = "0.5.2" , features = ["fs"]}
 open = "5.1.2"
+chrono = "0.4.38"
 
 [features]
 default = []

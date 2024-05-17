@@ -1,23 +1,33 @@
-import { useBackend } from "./backend.ts";
+import { useBackend } from "./useBackend.ts";
 import { ReadyState } from "react-use-websocket";
+import { ErrorIcon } from "./Icons/ErrorIcon.tsx";
+import { WarningIcon } from "./Icons/WarningIcon.tsx";
+import { CheckIcon } from "./Icons/CheckIcon.tsx";
 
-function textAndColor(state: ReadyState)  {
+export function StatusIndicator ({ className }: { className?: string } = {}) {
+  const { readyState, closeEvent, info } = useBackend()
+  const [icon, status] = textAndColor(readyState)
+  return <div className={`flex items-center space-x-2 p-2 bg-[var(--card-background-color)] rounded ${className}`}>
+    {icon}
+    {readyState === ReadyState.OPEN ? (
+      <span className="text-[var(--text-color)]">{info != null ? `${info.model} (${info.device})` : ''}</span>
+    ) : (
+      <span className="text-[var(--text-color)]">
+        {closeEvent?.reason && closeEvent.reason.length > 0 ? closeEvent.reason : status}
+      </span>
+    )}
+  </div>
+}
+
+function textAndColor (state: ReadyState) {
   switch (state) {
     case ReadyState.CLOSING:
     case ReadyState.CLOSED:
     case ReadyState.UNINSTANTIATED:
-      return ['bg-red-500', 'Disconnected']
+      return [<ErrorIcon/>, 'Disconnected']
     case ReadyState.CONNECTING:
-      return ['bg-yellow-500', 'Connecting']
+      return [<WarningIcon/>, 'Connecting']
     case ReadyState.OPEN:
-      return ['bg-green-500', 'Ready']
+      return [<CheckIcon/>, 'Ready']
   }
-}
-
-export function StatusIndicator({ className }: { className?: string } = {}) {
-  const { readyState } = useBackend()
-  const [color, status] = textAndColor(readyState)
-  return <div className={`p-2 w-36 ${color} text-center text-white font-semibold rounded ${className}`}>
-    {status}
-  </div>
 }
