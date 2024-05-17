@@ -2,32 +2,49 @@ use std::sync::Arc;
 
 use axum::extract::WebSocketUpgrade;
 use axum::response::Html;
-use axum::Router;
 use axum::routing::get;
+use axum::Router;
 use tokio::sync::Mutex;
 use tower_http::services::ServeDir;
 
-use crate::storage::Storage;
+use crate::storage::AppFs;
 use crate::ui::backend_ai::{BackendAi, JobProcessor};
-use crate::ui::ws_handler::ws_handler;
+use crate::ui::messages::Init;
+use crate::ui::ws_handler::WsHandler;
 
 async fn web_app() -> Html<&'static str> {
-    Html(include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/web/dist/index.html")))
+    Html(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/web/dist/index.html"
+    )))
 }
 
-pub async fn run<T: JobProcessor + 'static>(processor: T, port: usize, open: bool) -> anyhow::Result<()> {
+pub async fn run<T: JobProcessor + 'static>(
+    app_fs: AppFs,
+    processor: T,
+    port: usize,
+    open: bool,
+) -> anyhow::Result<()> {
+    let model = processor.name();
+    let device = processor.device();
+    let init = Init { model, device };
+
     let (ai_tx, ai_rx) = BackendAi::new(processor).run();
     let ai_rx = Arc::new(Mutex::new(ai_rx));
 
     let app = Router::new()
         .route("/", get(web_app))
-        .nest_service("/files", ServeDir::new(Storage::data_dir()))
+        .nest_service("/files", ServeDir::new(app_fs.root.clone()))
         .route(
             "/ws",
             get(|ws: WebSocketUpgrade| async move {
-                let ai_tx = ai_tx.clone();
-                let ai_rx = ai_rx.clone();
-                ws.on_upgrade(move |s| ws_handler(s, ai_tx, ai_rx))
+                let handler = WsHandler {
+                    ai_tx: ai_tx.clone(),
+                    ai_rx: ai_rx.clone(),
+                    storage: app_fs.clone(),
+                    info: init,
+                };
+                ws.on_upgrade(move |ws| handler.handle(ws))
             }),
         );
 
@@ -35,13 +52,15 @@ pub async fn run<T: JobProcessor + 'static>(processor: T, port: usize, open: boo
     if open {
         let _ = open::that(format!("http://localhost:{port}"));
     }
-    
+
     Ok(axum::serve(listener, app).await?)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
     use std::time::Duration;
+
     use futures_util::{SinkExt, StreamExt};
     use serde::de::DeserializeOwned;
     use serde::Serialize;
@@ -50,15 +69,15 @@ mod tests {
     use uuid::Uuid;
 
     use crate::ui::_test_utils::DummyJobProcessor;
-    use crate::ui::backend_ai::{
-        AudioGenerationRequest, BackendAiInboundMsg, BackendAiOutboundMsg,
-    };
+    use crate::ui::messages::{AbortGeneration, GenerateAudio, InboundMsg, OutboundMsg};
 
     use super::*;
 
     #[tokio::test]
     async fn sending_a_job_processes_it() -> anyhow::Result<()> {
-        tokio::spawn(run(DummyJobProcessor::default(), 8642, false));
+        let app_fs = AppFs::new(Path::new("/tmp/ws_server_tests"));
+        let processor = DummyJobProcessor::default();
+        tokio::spawn(run(app_fs, processor, 8642, false));
 
         ws_works("ws://localhost:8642/ws").await?;
         Ok(())
@@ -66,7 +85,9 @@ mod tests {
 
     #[tokio::test]
     async fn second_connection_fails_if_first_is_still_active() -> anyhow::Result<()> {
-        tokio::spawn(run(DummyJobProcessor::default(), 8643, false));
+        let app_fs = AppFs::new(Path::new("/tmp/ws_server_tests"));
+        let processor = DummyJobProcessor::default();
+        tokio::spawn(run(app_fs, processor, 8643, false));
 
         let _ = ws_works("ws://localhost:8643/ws").await?;
         ws_closes_connection("ws://localhost:8643/ws").await?;
@@ -76,7 +97,9 @@ mod tests {
 
     #[tokio::test]
     async fn second_connection_succeeds_if_first_releases() -> anyhow::Result<()> {
-        tokio::spawn(run(DummyJobProcessor::default(), 8644, false));
+        let app_fs = AppFs::new(Path::new("/tmp/ws_server_tests"));
+        let processor = DummyJobProcessor::default();
+        tokio::spawn(run(app_fs, processor, 8644, false));
 
         {
             let mut ws = ws_works("ws://localhost:8644/ws").await?;
@@ -93,41 +116,45 @@ mod tests {
 
     #[tokio::test]
     async fn can_abort_a_job() -> anyhow::Result<()> {
+        let app_fs = AppFs::new(Path::new("/tmp/ws_server_tests"));
         let processor = DummyJobProcessor::new(Duration::from_millis(100));
-        tokio::spawn(run(processor, 8645, false));
+        tokio::spawn(run(app_fs, processor, 8645, false));
 
         let (mut ws_stream, _) = connect_async("ws://localhost:8645/ws").await?;
         let id = Uuid::new_v4();
-        ws_stream
-            .send(
-                BackendAiInboundMsg::AudioGenerationRequest(AudioGenerationRequest {
-                    id,
-                    prompt: "Create a cool song".to_string(),
-                    secs: 4,
-                })
-                .to_tungstenite_msg(),
-            )
-            .await?;
+        let chat_id = Uuid::new_v4();
+        let msg = InboundMsg::GenerateAudio(GenerateAudio {
+            id,
+            chat_id,
+            prompt: "Create a cool song".to_string(),
+            secs: 4,
+        });
+        ws_stream.send(msg.to_tungstenite_msg()).await?;
 
         tokio::time::sleep(Duration::from_millis(150)).await;
         ws_stream
-            .send(BackendAiInboundMsg::Abort(id).to_tungstenite_msg())
+            .send(InboundMsg::AbortGeneration(AbortGeneration { id, chat_id }).to_tungstenite_msg())
             .await?;
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        msg.unwrap_init();
 
-        let msg = BackendAiOutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        let (uuid, progress) = msg.unwrap_progress();
-        assert_eq!(uuid, id);
-        assert_eq!(progress, 0.25);
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        let p = msg.unwrap_progress();
+        assert_eq!(p.id, id);
+        assert_eq!(p.chat_id, chat_id);
+        assert_eq!(p.progress, 0.25);
 
-        let msg = BackendAiOutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        let (uuid, progress) = msg.unwrap_progress();
-        assert_eq!(uuid, id);
-        assert_eq!(progress, 0.5);
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        let p = msg.unwrap_progress();
+        assert_eq!(p.id, id);
+        assert_eq!(p.chat_id, chat_id);
+        assert_eq!(p.progress, 0.5);
 
-        let msg = BackendAiOutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        let (uuid, err) = msg.unwrap_err();
-        assert_eq!(uuid, id);
-        assert_eq!(err, "Aborted");
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        let p = msg.unwrap_err();
+        assert_eq!(p.id, id);
+        assert_eq!(p.chat_id, chat_id);
+        assert_eq!(p.error, "Aborted");
 
         Ok(())
     }
@@ -141,41 +168,47 @@ mod tests {
     async fn ws_works(url: &str) -> anyhow::Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
         let (mut ws_stream, _) = connect_async(url).await?;
         let id = Uuid::new_v4();
-        ws_stream
-            .send(
-                BackendAiInboundMsg::AudioGenerationRequest(AudioGenerationRequest {
-                    id,
-                    prompt: "Create a cool song".to_string(),
-                    secs: 4,
-                })
-                .to_tungstenite_msg(),
-            )
-            .await?;
+        let chat_id = Uuid::new_v4();
+        let msg = InboundMsg::GenerateAudio(GenerateAudio {
+            id,
+            chat_id,
+            prompt: "Create a cool song".to_string(),
+            secs: 4,
+        });
+        ws_stream.send(msg.to_tungstenite_msg()).await?;
 
-        let msg = BackendAiOutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        let (uuid, progress) = msg.unwrap_progress();
-        assert_eq!(uuid, id);
-        assert_eq!(progress, 0.25);
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        msg.unwrap_init();
 
-        let msg = BackendAiOutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        let (uuid, progress) = msg.unwrap_progress();
-        assert_eq!(uuid, id);
-        assert_eq!(progress, 0.5);
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        let p = msg.unwrap_progress();
+        assert_eq!(p.id, id);
+        assert_eq!(p.chat_id, chat_id);
+        assert_eq!(p.progress, 0.25);
 
-        let msg = BackendAiOutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        let (uuid, progress) = msg.unwrap_progress();
-        assert_eq!(uuid, id);
-        assert_eq!(progress, 0.75);
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        let p = msg.unwrap_progress();
+        assert_eq!(p.id, id);
+        assert_eq!(p.chat_id, chat_id);
+        assert_eq!(p.progress, 0.5);
 
-        let msg = BackendAiOutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        let (uuid, progress) = msg.unwrap_progress();
-        assert_eq!(uuid, id);
-        assert_eq!(progress, 1.0);
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        let p = msg.unwrap_progress();
+        assert_eq!(p.id, id);
+        assert_eq!(p.chat_id, chat_id);
+        assert_eq!(p.progress, 0.75);
 
-        let msg = BackendAiOutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        let (uuid, res) = msg.unwrap_response();
-        assert_eq!(uuid, id);
-        assert_eq!(res, format!("audios/{id}.wav"));
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        let p = msg.unwrap_progress();
+        assert_eq!(p.id, id);
+        assert_eq!(p.chat_id, chat_id);
+        assert_eq!(p.progress, 1.0);
+
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        let p = msg.unwrap_result();
+        assert_eq!(p.id, id);
+        assert_eq!(p.chat_id, chat_id);
+        assert_eq!(p.relpath, format!("audios/{id}.wav"));
 
         Ok(ws_stream)
     }

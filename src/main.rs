@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -6,7 +7,9 @@ use std::sync::Arc;
 use crate::audio_manager::{AudioManager, AudioStream};
 use anyhow::anyhow;
 use clap::{Parser, ValueEnum};
+use directories::ProjectDirs;
 use half::f16;
+use lazy_static::lazy_static;
 use ort::{
     CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider, TensorRTExecutionProvider,
 };
@@ -19,10 +22,11 @@ use crate::loading_bar_factory::LoadingBarFactor;
 use crate::music_gen_audio_encodec::MusicGenAudioEncodec;
 use crate::music_gen_decoder::{MusicGenDecoder, MusicGenMergedDecoder, MusicGenSplitDecoder};
 use crate::music_gen_text_encoder::MusicGenTextEncoder;
-use crate::storage::Storage;
+use crate::storage::{AppFs, Storage};
 
 mod audio_manager;
 mod delay_pattern_mask_ids;
+mod fetch_remove_data_file;
 mod loading_bar_factory;
 mod logits;
 mod music_gen_audio_encodec;
@@ -41,9 +45,23 @@ enum Model {
     SmallFp16,
     SmallQuant,
     Medium,
-    MediumQuant,
     MediumFp16,
+    MediumQuant,
     Large,
+}
+
+impl Display for Model {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Model::Small => write!(f, "MusicGen Small"),
+            Model::SmallFp16 => write!(f, "MusicGen Small Fp16"),
+            Model::SmallQuant => write!(f, "MusicGen Small Quantized"),
+            Model::Medium => write!(f, "MusicGen Medium"),
+            Model::MediumFp16 => write!(f, "MusicGen Medium Fp16"),
+            Model::MediumQuant => write!(f, "MusicGen Medium Quantized"),
+            Model::Large => write!(f, "MusicGen Large"),
+        }
+    }
 }
 
 #[derive(Parser)]
@@ -109,18 +127,29 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
     args.validate()?;
 
+    let mut device = "Cpu".to_string();
     if args.gpu {
         println!("WARNING: GPU support is experimental, it might not work on most platforms");
-        init_gpu()?;
+        device = init_gpu()?;
     }
-    
+
+    let storage = AppFs::new(PROJECT_DIRS.data_dir());
+
     if args.prompt.is_empty() {
         let (text_encoder, decoder, audio_encodec) = build_music_gen_parts(&args).await?;
-        ui::run(ui::MusicGenJobProcessor {
-            text_encoder,
-            decoder,
-            audio_encodec,
-        }, 8642, true).await
+        ui::run(
+            storage,
+            ui::MusicGenJobProcessor {
+                name: args.model.to_string(),
+                device,
+                text_encoder,
+                decoder,
+                audio_encodec,
+            },
+            8642,
+            true,
+        )
+        .await
     } else {
         cli_interface(&args).await
     }
@@ -130,7 +159,7 @@ const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
 
 #[allow(unused_assignments, unused_variables)]
 async fn cli_interface(args: &Args) -> anyhow::Result<()> {
-    let (text_encoder, decoder, audio_encodec) = build_music_gen_parts(&args).await?;
+    let (text_encoder, decoder, audio_encodec) = build_music_gen_parts(args).await?;
     let secs_re = Regex::new("--secs[ =](\\d+)")?;
     let output_re = Regex::new(r"--output[ =]([.a-zA-Z_-]+)")?;
 
@@ -174,11 +203,7 @@ async fn cli_interface(args: &Args) -> anyhow::Result<()> {
 
         // Second, generate tokens.
         let max_len = secs * INPUT_IDS_BATCH_PER_SECOND;
-        let token_stream = decoder.generate_tokens(
-            last_hidden_state,
-            attention_mask,
-            max_len,
-        )?;
+        let token_stream = decoder.generate_tokens(last_hidden_state, attention_mask, max_len)?;
         let bar = LoadingBarFactor::bar("Generating audio");
         let mut data = VecDeque::new();
         while let Ok(tokens) = token_stream.recv() {
@@ -200,7 +225,9 @@ async fn cli_interface(args: &Args) -> anyhow::Result<()> {
         if !output.ends_with(".wav") {
             output += ".wav";
         }
-        audio_player.store_as_wav(samples, &output)?;
+        let bytes = audio_player.to_wav(samples)?;
+        tokio::fs::write(&output, bytes).await?;
+
         prompt = "".into();
         if args.no_interactive {
             break;
@@ -210,17 +237,21 @@ async fn cli_interface(args: &Args) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn init_gpu() -> anyhow::Result<()> {
+fn init_gpu() -> anyhow::Result<String> {
     let mut candidates = vec![];
 
+    let mut dev = "Cpu";
     if cfg!(feature = "tensorrt") {
         candidates.push(TensorRTExecutionProvider::default().build());
+        dev = "TensorRT"
     }
     if cfg!(feature = "cuda") {
         candidates.push(CUDAExecutionProvider::default().build());
+        dev = "Cuda"
     }
     if cfg!(feature = "coreml") {
         candidates.push(CoreMLExecutionProvider::default().with_ane_only().build());
+        dev = "CoreML"
     }
 
     let dummy_builder = ort::Session::builder()?;
@@ -241,7 +272,7 @@ fn init_gpu() -> anyhow::Result<()> {
     }
 
     ort::init().with_execution_providers(providers).commit()?;
-    Ok(())
+    Ok(dev.to_string())
 }
 
 macro_rules! hf_url {
@@ -450,13 +481,19 @@ async fn build_music_gen_parts(
     Ok((text_encoder, decoder, audio_encodec))
 }
 
+lazy_static! {
+    static ref PROJECT_DIRS: ProjectDirs = ProjectDirs::from("com", "gabotechs", "musicgpt")
+        .expect("Could not load project directory");
+}
+
 async fn download(
     remote_file_spec: Vec<(&'static str, &'static str)>,
     force_download: bool,
 ) -> anyhow::Result<VecDeque<PathBuf>> {
+    let storage = AppFs::new(PROJECT_DIRS.data_dir());
     let mut has_to_download = force_download;
     for (_, local_filename) in remote_file_spec.iter() {
-        has_to_download = has_to_download || !Storage::exists(local_filename).await?
+        has_to_download = has_to_download || !storage.exists(local_filename).await?
     }
 
     if has_to_download {
@@ -466,12 +503,15 @@ async fn download(
     let mut tasks = vec![];
     for (remote_file, local_filename) in remote_file_spec {
         let bar = m.add(LoadingBarFactor::download_bar(local_filename));
-        tasks.push(tokio::spawn(Storage::remote_data_file(
-            remote_file,
-            local_filename,
-            force_download,
-            bar.into_update_callback(),
-        )));
+        let storage = storage.clone();
+        tasks.push(tokio::spawn(async move {
+            storage.fetch_remote_data_file(
+                remote_file,
+                local_filename,
+                force_download,
+                bar.into_update_callback(),
+            ).await
+        }));
     }
     let mut results = VecDeque::new();
     for task in tasks {

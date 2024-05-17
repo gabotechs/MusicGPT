@@ -6,7 +6,7 @@ interface UserQuestionProps extends HTMLProps<HTMLDivElement> {
 
 const UserQuestion: React.FC<UserQuestionProps> = ({ text, className = '' }) => {
   return (
-    <div className={`bg-gray-50 p-4 rounded-b-lg rounded-tl-lg ${className}`}>
+    <div className={`p-4 rounded-b-lg rounded-tl-lg bg-[var(--card-background-color)] ${className}`}>
       <p>{text}</p>
     </div>
   );

@@ -4,23 +4,30 @@ use std::sync::mpsc::{channel, Receiver, Sender};
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use crate::audio_manager::AudioManager;
-use serde::{Deserialize, Serialize};
-use specta::Type;
-use uuid::Uuid;
-
 use crate::music_gen_audio_encodec::MusicGenAudioEncodec;
 use crate::music_gen_decoder::MusicGenDecoder;
 use crate::music_gen_text_encoder::MusicGenTextEncoder;
-use crate::storage::Storage;
 
 const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
 
-#[derive(Clone, Debug, Type, Deserialize, Serialize)]
+#[derive(Clone, Debug)]
 pub struct AudioGenerationRequest {
-    pub id: Uuid,
+    pub id: String,
     pub prompt: String,
     pub secs: usize,
+}
+
+#[derive(Clone, Debug)]
+pub enum BackendAiInboundMsg {
+    Request(AudioGenerationRequest),
+    Abort(String),
+}
+
+#[derive(Clone, Debug)]
+pub enum BackendAiOutboundMsg {
+    Response((String, VecDeque<f32>)),
+    Failure((String, String)),
+    Progress((String, f32)),
 }
 
 #[derive(Clone, Debug)]
@@ -38,21 +45,9 @@ impl Job {
     }
 }
 
-#[derive(Clone, Debug, Type, Serialize, Deserialize)]
-pub enum BackendAiInboundMsg {
-    AudioGenerationRequest(AudioGenerationRequest),
-    Abort(Uuid),
-    TearDown,
-}
-
-#[derive(Debug, Type, Serialize, Deserialize)]
-pub enum BackendAiOutboundMsg {
-    AudioGenerationResponse((Uuid, String)),
-    AudioGenerationFailure((Uuid, String)),
-    AudioGenerationProgress((Uuid, f32)),
-}
-
 pub trait JobProcessor: Send + Sync {
+    fn name(&self) -> String;
+    fn device(&self) -> String;
     fn process(
         &self,
         prompt: &str,
@@ -62,12 +57,22 @@ pub trait JobProcessor: Send + Sync {
 }
 
 pub struct MusicGenJobProcessor {
+    pub name: String,
+    pub device: String,
     pub text_encoder: MusicGenTextEncoder,
     pub decoder: Box<dyn MusicGenDecoder>,
     pub audio_encodec: MusicGenAudioEncodec,
 }
 
 impl JobProcessor for MusicGenJobProcessor {
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    fn device(&self) -> String {
+        self.device.clone()
+    }
+
     fn process(
         &self,
         prompt: &str,
@@ -109,7 +114,6 @@ impl BackendAi {
     }
 
     fn job_processing_loop(self, outbound_tx: Sender<BackendAiOutboundMsg>) {
-        let audio_manager = AudioManager::default();
         loop {
             let front = {
                 // Immediately drop jq so that the lock is released.
@@ -130,30 +134,19 @@ impl BackendAi {
 
             let output_tx_clone = outbound_tx.clone();
             let should_exit = self.should_exit.clone();
+            let job_id = job.req.id.clone();
             let cbk = Box::new(move |p| {
-                let msg = BackendAiOutboundMsg::AudioGenerationProgress((job.req.id, p));
+                let msg = BackendAiOutboundMsg::Progress((job_id.clone(), p));
                 let _ = output_tx_clone.send(msg);
                 should_exit.load(Ordering::SeqCst) || job.abort.load(Ordering::SeqCst)
             });
-            let result = || {
-                let result = self.processor.process(&job.req.prompt, job.req.secs, cbk)?;
-                let relative = format!("audios/{}.wav", job.req.id);
-                let filepath = Storage::prepare_file_path_sync(&relative)?;
-                audio_manager.store_as_wav(result, filepath.clone())?;
-                Ok::<String, anyhow::Error>(relative)
-            };
 
-            match result() {
+            let _ = match self.processor.process(&job.req.prompt, job.req.secs, cbk) {
                 Ok(filepath) => {
-                    let _ = outbound_tx.send(BackendAiOutboundMsg::AudioGenerationResponse((
-                        job.req.id, filepath,
-                    )));
+                    outbound_tx.send(BackendAiOutboundMsg::Response((job.req.id, filepath)))
                 }
                 Err(err) => {
-                    let _ = outbound_tx.send(BackendAiOutboundMsg::AudioGenerationFailure((
-                        job.req.id,
-                        err.to_string(),
-                    )));
+                    outbound_tx.send(BackendAiOutboundMsg::Failure((job.req.id, err.to_string())))
                 }
             };
             self.job_queue.write().unwrap().pop_front();
@@ -163,7 +156,7 @@ impl BackendAi {
     fn msg_processing_loop(self, inbound_rx: Receiver<BackendAiInboundMsg>) {
         while let Ok(msg) = inbound_rx.recv() {
             match msg {
-                BackendAiInboundMsg::AudioGenerationRequest(req) => {
+                BackendAiInboundMsg::Request(req) => {
                     self.job_queue.write().unwrap().push_back(Job::new(req));
                 }
                 BackendAiInboundMsg::Abort(id) => {
@@ -179,10 +172,6 @@ impl BackendAi {
                     if let Some(to_remove) = to_remove {
                         queue.remove(to_remove);
                     }
-                }
-                BackendAiInboundMsg::TearDown => {
-                    self.should_exit.store(true, Ordering::SeqCst);
-                    return;
                 }
             }
         }
@@ -207,6 +196,7 @@ impl BackendAi {
 #[cfg(test)]
 mod tests {
     use crate::ui::_test_utils::DummyJobProcessor;
+    use uuid::Uuid;
 
     use super::*;
 
@@ -216,20 +206,18 @@ mod tests {
 
         let (tx, rx) = backend.run();
 
-        let id = Uuid::new_v4();
-        tx.send(BackendAiInboundMsg::AudioGenerationRequest(
-            AudioGenerationRequest {
-                id,
-                prompt: "".to_string(),
-                secs: 4,
-            },
-        ))?;
+        let id = Uuid::new_v4().to_string();
+        tx.send(BackendAiInboundMsg::Request(AudioGenerationRequest {
+            id,
+            prompt: "".to_string(),
+            secs: 4,
+        }))?;
 
         assert_eq!(rx.recv()?.unwrap_progress().1, 0.25);
         assert_eq!(rx.recv()?.unwrap_progress().1, 0.5);
         assert_eq!(rx.recv()?.unwrap_progress().1, 0.75);
         assert_eq!(rx.recv()?.unwrap_progress().1, 1.0);
-        assert_eq!(rx.recv()?.unwrap_response().1, format!("audios/{id}.wav"));
+        assert_eq!(rx.recv()?.unwrap_response().1, VecDeque::from([0.0, 1.0, 2.0, 3.0]));
 
         Ok(())
     }
@@ -240,14 +228,12 @@ mod tests {
 
         let (tx, rx) = backend.run();
 
-        let id = Uuid::new_v4();
-        tx.send(BackendAiInboundMsg::AudioGenerationRequest(
-            AudioGenerationRequest {
-                id,
-                prompt: "fail at 2".to_string(),
-                secs: 4,
-            },
-        ))?;
+        let id = Uuid::new_v4().to_string();
+        tx.send(BackendAiInboundMsg::Request(AudioGenerationRequest {
+            id,
+            prompt: "fail at 2".to_string(),
+            secs: 4,
+        }))?;
 
         assert_eq!(rx.recv()?.unwrap_progress().1, 0.25);
         assert_eq!(rx.recv()?.unwrap_progress().1, 0.5);
@@ -262,14 +248,12 @@ mod tests {
 
         let (tx, rx) = backend.run();
 
-        let id = Uuid::new_v4();
-        tx.send(BackendAiInboundMsg::AudioGenerationRequest(
-            AudioGenerationRequest {
-                id,
-                prompt: "".to_string(),
-                secs: 4,
-            },
-        ))?;
+        let id = Uuid::new_v4().to_string();
+        tx.send(BackendAiInboundMsg::Request(AudioGenerationRequest {
+            id: id.clone(),
+            prompt: "".to_string(),
+            secs: 4,
+        }))?;
 
         tokio::time::sleep(Duration::from_millis(150)).await;
         tx.send(BackendAiInboundMsg::Abort(id))?;
@@ -278,14 +262,12 @@ mod tests {
         assert_eq!(rx.recv()?.unwrap_progress().1, 0.5);
         assert_eq!(rx.recv()?.unwrap_err().1, "Aborted");
 
-        let id = Uuid::new_v4();
-        tx.send(BackendAiInboundMsg::AudioGenerationRequest(
-            AudioGenerationRequest {
-                id,
-                prompt: "".to_string(),
-                secs: 4,
-            },
-        ))?;
+        let id = Uuid::new_v4().to_string();
+        tx.send(BackendAiInboundMsg::Request(AudioGenerationRequest {
+            id,
+            prompt: "".to_string(),
+            secs: 4,
+        }))?;
 
         assert_eq!(rx.recv()?.unwrap_progress().1, 0.25);
         assert_eq!(rx.recv()?.unwrap_progress().1, 0.5);
