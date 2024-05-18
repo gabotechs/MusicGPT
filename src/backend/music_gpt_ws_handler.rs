@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 use std::sync::mpsc::Sender;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use futures_util::StreamExt;
@@ -48,10 +49,12 @@ pub struct SetChatMetadataRequest {
 
 #[derive(Clone, Debug, Type, Serialize, Deserialize)]
 pub enum InboundMsg {
+    GenerateAudioNewChat(GenerateAudioRequest),
     GenerateAudio(GenerateAudioRequest),
     AbortGeneration(AbortGenerationRequest),
     GetChat(ChatRequest),
     SetChatMetadata(SetChatMetadataRequest),
+    DelChat(ChatRequest),
 }
 
 // === Outbound ===
@@ -80,12 +83,34 @@ impl<S: Storage + 'static> WsHandler for MusicGptWsHandler<S> {
 
     async fn handle_init(&self) -> Vec<OutboundMsg> {
         let chats = Chat::load_all(&self.storage).await.unwrap_or_default();
-        vec![OutboundMsg::Info(self.info.clone()), OutboundMsg::Chats(chats)]
+        vec![
+            OutboundMsg::Info(self.info.clone()),
+            OutboundMsg::Chats(chats),
+        ]
     }
 
     async fn handle_inbound_msg(&self, msg: InboundMsg) -> Option<OutboundMsg> {
         async move {
             let res = match msg {
+                InboundMsg::GenerateAudioNewChat(req) => {
+                    let chat = Chat {
+                        chat_id: req.chat_id,
+                        name: req.prompt.clone(),
+                        created_at: SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis(),
+                    };
+                    chat.save(&self.storage).await?;
+                    self.ai_tx
+                        .send(BackendInboundMsg::Request(AudioGenerationRequest {
+                            id: IdPair(req.chat_id, req.id).to_string(),
+                            prompt: req.prompt.clone(),
+                            secs: req.secs,
+                        }))?;
+                    let chats = Chat::load_all(&self.storage).await?;
+                    Some(OutboundMsg::Chats(chats))
+                }
                 InboundMsg::GenerateAudio(req) => {
                     self.ai_tx
                         .send(BackendInboundMsg::Request(AudioGenerationRequest {
@@ -109,6 +134,12 @@ impl<S: Storage + 'static> WsHandler for MusicGptWsHandler<S> {
                     let mut chat = Chat::load(&self.storage, req.chat_id).await?;
                     chat.update_metadata(&self.storage, req.name).await?;
                     None
+                }
+                InboundMsg::DelChat(req) => {
+                    let chat = Chat::load(&self.storage, req.chat_id).await?;
+                    chat.delete(&self.storage).await?;
+                    let chats = Chat::load_all(&self.storage).await?;
+                    Some(OutboundMsg::Chats(chats))
                 }
             };
             Ok::<Option<OutboundMsg>, anyhow::Error>(res)

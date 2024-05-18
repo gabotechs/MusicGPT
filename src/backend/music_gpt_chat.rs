@@ -83,7 +83,10 @@ impl Chat {
         let this = Self {
             chat_id,
             name: "".to_string(),
-            created_at: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis(),
+            created_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis(),
         };
         let this_serial = serde_json::to_string(&this)?;
         storage.write(&metadata_file, this_serial).await?;
@@ -109,6 +112,17 @@ impl Chat {
         result.reverse();
 
         Ok(result)
+    }
+
+    pub async fn save<S: Storage>(&self, storage: &S) -> anyhow::Result<()> {
+        let this_serial = serde_json::to_string(self)?;
+        storage
+            .write(
+                &format!("chats/{}/{METADATA_FILE}", self.chat_id),
+                this_serial,
+            )
+            .await?;
+        Ok(())
     }
 
     pub async fn update_metadata<S: Storage>(
@@ -147,14 +161,19 @@ impl Chat {
         }
         Ok(result)
     }
+
+    pub async fn delete<S: Storage>(self, storage: &S) -> anyhow::Result<()> {
+        storage.rm_rf(&format!("chats/{}", self.chat_id)).await?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-    use uuid::Uuid;
     use crate::backend::music_gpt_chat::{Chat, ChatEntry};
     use crate::storage::AppFs;
+    use std::time::Duration;
+    use uuid::Uuid;
 
     #[tokio::test]
     async fn loads_a_chat_even_if_it_does_not_exist() -> anyhow::Result<()> {
@@ -170,7 +189,8 @@ mod tests {
         let storage = AppFs::new_tmp();
         let chat_id = Uuid::new_v4();
         let mut chat = Chat::load(&storage, chat_id).await?;
-        chat.update_metadata(&storage, Some("foo".to_string())).await?;
+        chat.update_metadata(&storage, Some("foo".to_string()))
+            .await?;
 
         let chat = Chat::load(&storage, chat_id).await?;
         assert_eq!(chat.name, "foo");
@@ -188,10 +208,10 @@ mod tests {
             chats.push(chat)
         }
         chats.reverse();
-        
+
         let all = Chat::load_all(&storage).await?;
         assert_eq!(all, chats);
-        
+
         Ok(())
     }
 
@@ -208,7 +228,7 @@ mod tests {
     async fn list_messages_in_chat() -> anyhow::Result<()> {
         let storage = AppFs::new_tmp();
         let chat_id = Uuid::new_v4();
-        
+
         let msg1 = ChatEntry::new_user(chat_id, Uuid::new_v4(), "u1".to_string());
         msg1.save(&storage).await?;
         let msg2 = ChatEntry::new_ai_success(chat_id, Uuid::new_v4(), "a1".to_string());
@@ -221,15 +241,32 @@ mod tests {
         msg5.save(&storage).await?;
         let msg6 = ChatEntry::new_ai_err(chat_id, Uuid::new_v4(), "a2".to_string());
         msg6.save(&storage).await?;
-        
+
         let history = Chat::load_entries(&storage, chat_id).await?;
-        assert_eq!(history, vec![
-            msg1,
-            msg2,
-            msg4,
-            msg6
-        ]);
-        
+        assert_eq!(history, vec![msg1, msg2, msg4, msg6]);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn deletes_chat() -> anyhow::Result<()> {
+        let storage = AppFs::new_tmp();
+        let chat_id = Uuid::new_v4();
+
+        let msg1 = ChatEntry::new_user(chat_id, Uuid::new_v4(), "u1".to_string());
+        msg1.save(&storage).await?;
+        let msg2 = ChatEntry::new_ai_success(chat_id, Uuid::new_v4(), "a1".to_string());
+        msg2.save(&storage).await?;
+
+        let history = Chat::load_entries(&storage, chat_id).await?;
+        assert_eq!(history, vec![msg1, msg2]);
+
+        let chat = Chat::load(&storage, chat_id).await?;
+        chat.delete(&storage).await?;
+
+        let history = Chat::load_entries(&storage, chat_id).await?;
+        assert_eq!(history, vec![]);
+
         Ok(())
     }
 }

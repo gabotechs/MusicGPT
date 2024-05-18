@@ -3,15 +3,17 @@ use specta::Type;
 use uuid::Uuid;
 
 use crate::audio_manager::AudioManager;
-use crate::storage::Storage;
 use crate::backend::audio_generation_backend::BackendOutboundMsg;
 use crate::backend::music_gpt_chat::ChatEntry;
 use crate::backend::music_gpt_ws_handler::IdPair;
+use crate::storage::Storage;
 
 #[derive(Clone, Debug, Type, Serialize, Deserialize)]
 pub struct AudioGenerationStart {
     pub id: Uuid,
     pub chat_id: Uuid,
+    pub prompt: String,
+    pub secs: usize,
 }
 
 #[derive(Clone, Debug, Type, Serialize, Deserialize)]
@@ -57,9 +59,14 @@ pub fn audio_generation_fanout<S: Storage + 'static>(
             let outbound_msg = match msg {
                 BackendOutboundMsg::Start(msg) => {
                     let IdPair(chat_id, id) = msg.id.into();
-                    let entry = ChatEntry::new_user(chat_id, id, msg.prompt);
+                    let entry = ChatEntry::new_user(chat_id, id, msg.prompt.clone());
                     let _ = entry.save(&storage).await;
-                    GenerationMessage::Start(AudioGenerationStart { id, chat_id })
+                    GenerationMessage::Start(AudioGenerationStart {
+                        id,
+                        chat_id,
+                        prompt: msg.prompt,
+                        secs: msg.secs,
+                    })
                 }
                 BackendOutboundMsg::Response((id, queue)) => {
                     let IdPair(chat_id, id) = id.into();

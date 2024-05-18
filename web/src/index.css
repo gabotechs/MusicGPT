@@ -10,8 +10,11 @@
     --input-background-color: white;
     --input-text-color: black;
     --input-border-color: #d1d5db;
-    --button-background-color: #3b82f6;
     --button-text-color: white;
+    --drawer-background-color: #f7f7f7;
+    --border-color: #e5e7eb;
+    --item-hover-background-color: #e2e8f0;
+    --item-selected-background-color: #bfdbfe;
 }
 
 .dark {
@@ -22,6 +25,9 @@
     --input-background-color: #374151;
     --input-text-color: white;
     --input-border-color: #4b5563;
-    --button-background-color: #60a5fa;
     --button-text-color: white;
+    --drawer-background-color: #2d3748;
+    --border-color: #4a5568;
+    --item-hover-background-color: #4a5568;
+    --item-selected-background-color: #6b7280;
 }

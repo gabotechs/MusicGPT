@@ -1,0 +1,79 @@
+.chat-drawer {
+    position: fixed;
+    top: 0;
+    left: -300px;
+    width: 300px;
+    height: 100vh;
+    background-color: var(--drawer-background-color);
+    border-right: 1px solid var(--border-color);
+    transition: left 0.3s ease;
+    z-index: 999;
+}
+
+.chat-drawer.open {
+    left: 0;
+}
+
+.chat-drawer-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.close-button {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+}
+
+.chat-list {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+    overflow-y: auto;
+    height: calc(100vh - 60px);
+}
+
+.chat-item {
+    padding: 1rem;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.chat-item:hover {
+    background-color: var(--item-hover-background-color);
+}
+
+.chat-item.selected {
+    background-color: var(--item-selected-background-color);
+}
+
+.drawer-toggle {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    background-color: var(--drawer-background-color);
+    color: var(--text-color);
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    z-index: 998;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+@media screen and (min-width: 768px) {
+    /*.chat-drawer {*/
+    /*    left: 0;*/
+    /*}*/
+    /*.chat-drawer-toggle {*/
+    /*    display: none;*/
+    /*}*/
+}

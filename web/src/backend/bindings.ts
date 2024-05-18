@@ -4,31 +4,31 @@ export type AiChatEntry = { id: string; chat_id: string; relpath: string; error:
 
 export type Chat = { chat_id: string; name: string; created_at: number }
 
-export type AudioGenerationResult = { id: string; chat_id: string; relpath: string }
-
-export type GenerationMessage = { Start: AudioGenerationStart } | { Progress: AudioGenerationProgress } | { Error: AudioGenerationError } | { Result: AudioGenerationResult }
-
-export type InboundMsg = { GenerateAudio: GenerateAudioRequest } | { AbortGeneration: AbortGenerationRequest } | { GetChat: ChatRequest } | { SetChatMetadata: SetChatMetadataRequest }
-
-export type AbortGenerationRequest = { id: string; chat_id: string }
-
-export type AudioGenerationError = { id: string; chat_id: string; error: string }
+export type UserChatEntry = { id: string; chat_id: string; text: string }
 
 export type SetChatMetadataRequest = { chat_id: string; name: string | null }
 
-export type Info = { model: string; device: string }
+export type AudioGenerationResult = { id: string; chat_id: string; relpath: string }
 
-export type UserChatEntry = { id: string; chat_id: string; text: string }
+export type AudioGenerationStart = { id: string; chat_id: string; prompt: string; secs: number }
 
-export type AudioGenerationProgress = { id: string; chat_id: string; progress: number }
+export type AudioGenerationError = { id: string; chat_id: string; error: string }
 
 export type GenerateAudioRequest = { id: string; chat_id: string; prompt: string; secs: number }
 
-export type ChatRequest = { chat_id: string }
+export type GenerationMessage = { Start: AudioGenerationStart } | { Progress: AudioGenerationProgress } | { Error: AudioGenerationError } | { Result: AudioGenerationResult }
 
-export type AudioGenerationStart = { id: string; chat_id: string }
+export type ChatEntry = { User: UserChatEntry } | { Ai: AiChatEntry }
+
+export type AudioGenerationProgress = { id: string; chat_id: string; progress: number }
+
+export type Info = { model: string; device: string }
 
 export type OutboundMsg = { Generation: GenerationMessage } | { Info: Info } | { Chat: [Chat, ChatEntry[]] } | { Chats: Chat[] } | { Error: string }
 
-export type ChatEntry = { User: UserChatEntry } | { Ai: AiChatEntry }
+export type InboundMsg = { GenerateAudioNewChat: GenerateAudioRequest } | { GenerateAudio: GenerateAudioRequest } | { AbortGeneration: AbortGenerationRequest } | { GetChat: ChatRequest } | { SetChatMetadata: SetChatMetadataRequest } | { DelChat: ChatRequest }
+
+export type ChatRequest = { chat_id: string }
+
+export type AbortGenerationRequest = { id: string; chat_id: string }
 
