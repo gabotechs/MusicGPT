@@ -140,7 +140,7 @@ class ChatHistory {
     if (msg.id in this.aiDict) {
       this.aiDict[msg.id].progress = 1
       if ('relpath' in msg) {
-        this.aiDict[msg.id].url = msg.relpath
+        this.aiDict[msg.id].url = relpathToUrl(msg.relpath)
       } else if ('error' in msg) {
         this.aiDict[msg.id].error = msg.error
       }
@@ -150,7 +150,7 @@ class ChatHistory {
       type: "ai",
       id: msg.id,
       progress: 1,
-      url: 'relpath' in msg ? (FILES_URL + '/' + msg.relpath) : undefined,
+      url: 'relpath' in msg ? relpathToUrl(msg.relpath) : undefined,
       error: 'error' in msg ? msg.error : undefined,
     }
     this.aiDict[msg.id] = aiMsg
@@ -179,7 +179,7 @@ class ChatHistory {
           id: entry.Ai.id,
           progress: 1,
         }
-        if (entry.Ai.relpath) msg.url = FILES_URL + '/' + entry.Ai.relpath
+        if (entry.Ai.relpath) msg.url = relpathToUrl(entry.Ai.relpath)
         if (entry.Ai.error) msg.error = entry.Ai.error
         chatHistory.list.push(msg)
         chatHistory.aiDict[msg.id] = msg
@@ -191,4 +191,9 @@ class ChatHistory {
 
 function clamp (min: number, num: number, max: number): number {
   return Math.max(Math.min(num, max), min);
+}
+
+function relpathToUrl (relpath: string): string {
+  if (!relpath.startsWith('/')) relpath = `/${relpath}`;
+  return FILES_URL + relpath
 }
