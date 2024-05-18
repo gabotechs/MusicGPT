@@ -1419,7 +1419,7 @@ dependencies = [
 
 [[package]]
 name = "musicgpt"
-version = "0.1.35"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "async-stream",
