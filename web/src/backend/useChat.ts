@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { v4 as uuid } from "uuid";
 
 import { FILES_URL, useBackend } from "./useBackend.ts";
+import { Chat, ChatEntry } from './bindings.ts'
 
 export interface UserMessage {
   type: "user";
@@ -23,12 +24,13 @@ const DEFAULT_CHAT_ID = '39b099b5-9eaf-4ac3-8d4b-1380369090b5'
 
 export function useChat () {
   const [activeChat,] = useState(DEFAULT_CHAT_ID)
+  const [chatMetadata, setChatMetadata] = useState<Chat>()
 
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const { send, last } = useBackend();
 
   useEffect(() => {
-    send({ RetrieveHistory: { chat_id: activeChat } })
+    send({ GetChat: { chat_id: activeChat } })
   }, [activeChat, send]);
 
   useEffect(() => {
@@ -63,27 +65,10 @@ export function useChat () {
         }
         return [...prev]
       })
-    } else if ('ChatHistory' in last) {
-      const [, history] = last.ChatHistory
-      const newHistory: ChatMessage[] = []
-      for (const entry of history) {
-        if ('User' in entry) {
-          newHistory.push({
-            type: 'user',
-            id: entry.User.id,
-            text: entry.User.text,
-          })
-        } else if ('Ai' in entry) {
-          newHistory.push({
-            type: 'ai',
-            id: entry.Ai.id,
-            url: entry.Ai.relpath || undefined,
-            error: entry.Ai.error || undefined,
-            progress: 1,
-          })
-        }
-      }
-      setHistory(newHistory)
+    } else if ('Chat' in last) {
+      const [chat, history] = last.Chat
+      setChatMetadata(chat)
+      setHistory(history.map(chatEntryToChatMessage))
     }
   }, [last])
 
@@ -105,9 +90,29 @@ export function useChat () {
     }
   }
 
-  return { sendMessage, abortLast, history }
+  return { sendMessage, abortLast, history, chatMetadata }
 }
 
 function clamp (min: number, num: number, max: number): number {
   return Math.max(Math.min(num, max), min);
+}
+
+function chatEntryToChatMessage (entry: ChatEntry): ChatMessage {
+  if ('User' in entry) {
+    return {
+      type: 'user',
+      id: entry.User.id,
+      text: entry.User.text,
+    }
+  } else if ('Ai' in entry) {
+    return {
+      type: 'ai',
+      id: entry.Ai.id,
+      url: entry.Ai.relpath || undefined,
+      error: entry.Ai.error || undefined,
+      progress: 1,
+    }
+  } else {
+    throw new Error('Unreachable')
+  }
 }

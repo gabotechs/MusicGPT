@@ -58,7 +58,6 @@ pub async fn run<T: JobProcessor + 'static>(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
     use std::sync::atomic::{AtomicU16, Ordering};
     use std::time::Duration;
 
@@ -70,7 +69,7 @@ mod tests {
 
     use crate::backend::_test_utils::DummyJobProcessor;
     use crate::backend::music_gpt_ws_handler::{
-        AbortGeneration, GenerateAudio, InboundMsg, OutboundMsg,
+        AbortGenerationRequest, GenerateAudioRequest, InboundMsg, OutboundMsg,
     };
 
     use super::*;
@@ -78,7 +77,7 @@ mod tests {
     static PORT: AtomicU16 = AtomicU16::new(8643);
 
     fn spawn<P: JobProcessor + 'static>(processor: P) -> usize {
-        let app_fs = AppFs::new(Path::new("/tmp/ws_server_tests"));
+        let app_fs = AppFs::new_tmp();
         let port = PORT.fetch_add(1, Ordering::SeqCst) as usize;
         tokio::spawn(run(app_fs, processor, port, false));
         port
@@ -91,7 +90,7 @@ mod tests {
         let (mut ws_stream, _) = connect_async(&format!("ws://localhost:{port}/ws")).await?;
         let id = Uuid::new_v4();
         let chat_id = Uuid::new_v4();
-        let msg = InboundMsg::GenerateAudio(GenerateAudio {
+        let msg = InboundMsg::GenerateAudio(GenerateAudioRequest {
             id,
             chat_id,
             prompt: "Create a cool song".to_string(),
@@ -100,8 +99,11 @@ mod tests {
         ws_stream.send(msg.to_tungstenite_msg()).await?;
 
         let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        msg.unwrap_init();
+        msg.unwrap_info();
 
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        msg.unwrap_chats();
+        
         let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
         msg.unwrap_start();
 
@@ -145,7 +147,7 @@ mod tests {
         let (mut ws_stream, _) = connect_async(&format!("ws://localhost:{port}/ws")).await?;
         let id = Uuid::new_v4();
         let chat_id = Uuid::new_v4();
-        let msg = InboundMsg::GenerateAudio(GenerateAudio {
+        let msg = InboundMsg::GenerateAudio(GenerateAudioRequest {
             id,
             chat_id,
             prompt: "Create a cool song".to_string(),
@@ -155,11 +157,14 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(150)).await;
         ws_stream
-            .send(InboundMsg::AbortGeneration(AbortGeneration { id, chat_id }).to_tungstenite_msg())
+            .send(InboundMsg::AbortGeneration(AbortGenerationRequest { id, chat_id }).to_tungstenite_msg())
             .await?;
 
         let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        msg.unwrap_init();
+        msg.unwrap_info();
+
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        msg.unwrap_chats();
 
         let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
         msg.unwrap_start();
@@ -192,7 +197,7 @@ mod tests {
         let (mut ws_stream, _) = connect_async(&format!("ws://localhost:{port}/ws")).await?;
         let id = Uuid::new_v4();
         let chat_id = Uuid::new_v4();
-        let msg = InboundMsg::GenerateAudio(GenerateAudio {
+        let msg = InboundMsg::GenerateAudio(GenerateAudioRequest {
             id,
             chat_id,
             prompt: "fail at 2".to_string(),
@@ -201,7 +206,10 @@ mod tests {
         ws_stream.send(msg.to_tungstenite_msg()).await?;
 
         let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
-        msg.unwrap_init();
+        msg.unwrap_info();
+
+        let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
+        msg.unwrap_chats();
 
         let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
         msg.unwrap_start();

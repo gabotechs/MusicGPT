@@ -5,7 +5,7 @@ mod audio_generation_backend;
 mod server;
 #[cfg(test)]
 mod _test_utils;
-mod music_gpt_chat_entry;
+mod music_gpt_chat;
 mod audio_generation_fanout;
 mod ws_handler;
 mod music_gpt_ws_handler;

@@ -28,8 +28,8 @@ export function useBackend () {
   const last = lastJsonMessage;
 
   useEffect(() => {
-    if (last != null && 'Init' in last) {
-      setInfo(last.Init);
+    if (last != null && 'Info' in last) {
+      setInfo(last.Info);
     }
   }, [last]);
 

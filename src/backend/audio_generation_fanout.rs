@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::audio_manager::AudioManager;
 use crate::storage::Storage;
 use crate::backend::audio_generation_backend::BackendOutboundMsg;
-use crate::backend::music_gpt_chat_entry::ChatEntry;
+use crate::backend::music_gpt_chat::ChatEntry;
 use crate::backend::music_gpt_ws_handler::IdPair;
 
 #[derive(Clone, Debug, Type, Serialize, Deserialize)]
@@ -41,17 +41,6 @@ pub enum GenerationMessage {
     Progress(AudioGenerationProgress),
     Error(AudioGenerationError),
     Result(AudioGenerationResult),
-}
-
-impl GenerationMessage {
-    pub fn chat_id(&self) -> Uuid {
-        match self {
-            GenerationMessage::Start(v) => v.chat_id,
-            GenerationMessage::Progress(v) => v.chat_id,
-            GenerationMessage::Error(v) => v.chat_id,
-            GenerationMessage::Result(v) => v.chat_id,
-        }
-    }
 }
 
 pub fn audio_generation_fanout<S: Storage + 'static>(

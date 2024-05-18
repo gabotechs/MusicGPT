@@ -55,6 +55,7 @@ mod tests {
         let content = content.unwrap();
         assert_eq!(String::from_utf8_lossy(&content), "test content");
 
+        // it should list files
         for i in 0..3 {
             let mut file = s.create(&format!("list/{i}.txt")).await?;
             file.write_all(format!("{i}").as_bytes()).await?;
@@ -63,6 +64,10 @@ mod tests {
         assert_eq!(list, vec!["list/0.txt", "list/1.txt", "list/2.txt"]);
         let list = s.list("list").await?;
         assert_eq!(list, vec!["list/0.txt", "list/1.txt", "list/2.txt"]);
+        
+        // listing empty directory returns empty array
+        let list = s.list("NON_EXISTING/").await?;
+        assert_eq!(list, Vec::<String>::new());
 
         Ok(())
     }

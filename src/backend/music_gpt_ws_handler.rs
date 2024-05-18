@@ -1,24 +1,25 @@
 use std::fmt::{Display, Formatter};
 use std::sync::mpsc::Sender;
+
 use async_trait::async_trait;
 use futures_util::StreamExt;
-use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use uuid::Uuid;
-use crate::storage::Storage;
-use crate::backend::audio_generation_fanout::GenerationMessage;
+
 use crate::backend::audio_generation_backend::{AudioGenerationRequest, BackendInboundMsg};
-use crate::backend::music_gpt_chat_entry::ChatEntry;
-use crate::backend::ws_handler::{WsHandler};
+use crate::backend::audio_generation_fanout::GenerationMessage;
+use crate::backend::music_gpt_chat::{Chat, ChatEntry};
+use crate::backend::ws_handler::WsHandler;
+use crate::storage::Storage;
 
 #[derive(Clone, Debug, Type, Serialize, Deserialize)]
-pub struct RetrieveHistory {
+pub struct ChatRequest {
     pub chat_id: Uuid,
 }
 
 #[derive(Clone, Debug, Type, Serialize, Deserialize)]
-pub struct GenerateAudio {
+pub struct GenerateAudioRequest {
     pub id: Uuid,
     pub chat_id: Uuid,
     pub prompt: String,
@@ -26,7 +27,7 @@ pub struct GenerateAudio {
 }
 
 #[derive(Clone, Debug, Type, Serialize, Deserialize)]
-pub struct AbortGeneration {
+pub struct AbortGenerationRequest {
     pub id: Uuid,
     pub chat_id: Uuid,
 }
@@ -34,16 +35,23 @@ pub struct AbortGeneration {
 #[derive(Clone, Debug, Type, Serialize, Deserialize)]
 pub struct Info {
     pub model: String,
-    pub device: String
+    pub device: String,
+}
+
+#[derive(Clone, Debug, Type, Serialize, Deserialize)]
+pub struct SetChatMetadataRequest {
+    pub chat_id: Uuid,
+    pub name: Option<String>,
 }
 
 // === Inbound ===
 
 #[derive(Clone, Debug, Type, Serialize, Deserialize)]
 pub enum InboundMsg {
-    GenerateAudio(GenerateAudio),
-    AbortGeneration(AbortGeneration),
-    RetrieveHistory(RetrieveHistory)
+    GenerateAudio(GenerateAudioRequest),
+    AbortGeneration(AbortGenerationRequest),
+    GetChat(ChatRequest),
+    SetChatMetadata(SetChatMetadataRequest),
 }
 
 // === Outbound ===
@@ -51,10 +59,11 @@ pub enum InboundMsg {
 #[derive(Clone, Debug, Type, Serialize, Deserialize)]
 pub enum OutboundMsg {
     Generation(GenerationMessage),
-    Init(Info),
-    ChatHistory((Uuid, Vec<ChatEntry>))
+    Info(Info),
+    Chat((Chat, Vec<ChatEntry>)),
+    Chats(Vec<Chat>),
+    Error(String),
 }
-
 
 #[derive(Clone)]
 pub struct MusicGptWsHandler<S: Storage> {
@@ -70,33 +79,42 @@ impl<S: Storage + 'static> WsHandler for MusicGptWsHandler<S> {
     type Outbound = OutboundMsg;
 
     async fn handle_init(&self) -> Vec<OutboundMsg> {
-        vec![OutboundMsg::Init(self.info.clone())]
+        let chats = Chat::load_all(&self.storage).await.unwrap_or_default();
+        vec![OutboundMsg::Info(self.info.clone()), OutboundMsg::Chats(chats)]
     }
 
     async fn handle_inbound_msg(&self, msg: InboundMsg) -> Option<OutboundMsg> {
-        match msg {
-            InboundMsg::GenerateAudio(req) => {
-                let _ = self
-                    .ai_tx
-                    .send(BackendInboundMsg::Request(AudioGenerationRequest {
-                        id: IdPair(req.chat_id, req.id).to_string(),
-                        prompt: req.prompt.clone(),
-                        secs: req.secs,
-                    }));
-                None
-            }
-            InboundMsg::AbortGeneration(req) => {
-                let id = IdPair(req.chat_id, req.id).to_string();
-                let _ = self.ai_tx.send(BackendInboundMsg::Abort(id));
-                None
-            }
-            InboundMsg::RetrieveHistory(req) => {
-                let history = ChatEntry::load_from_chat(&self.storage, req.chat_id)
-                    .await
-                    .unwrap_or_default();
-                Some(OutboundMsg::ChatHistory((req.chat_id, history)))
-            }
+        async move {
+            let res = match msg {
+                InboundMsg::GenerateAudio(req) => {
+                    self.ai_tx
+                        .send(BackendInboundMsg::Request(AudioGenerationRequest {
+                            id: IdPair(req.chat_id, req.id).to_string(),
+                            prompt: req.prompt.clone(),
+                            secs: req.secs,
+                        }))?;
+                    None
+                }
+                InboundMsg::AbortGeneration(req) => {
+                    let id = IdPair(req.chat_id, req.id).to_string();
+                    self.ai_tx.send(BackendInboundMsg::Abort(id))?;
+                    None
+                }
+                InboundMsg::GetChat(req) => {
+                    let chat = Chat::load(&self.storage, req.chat_id).await?;
+                    let history = Chat::load_entries(&self.storage, req.chat_id).await?;
+                    Some(OutboundMsg::Chat((chat, history)))
+                }
+                InboundMsg::SetChatMetadata(req) => {
+                    let mut chat = Chat::load(&self.storage, req.chat_id).await?;
+                    chat.update_metadata(&self.storage, req.name).await?;
+                    None
+                }
+            };
+            Ok::<Option<OutboundMsg>, anyhow::Error>(res)
         }
+        .await
+        .unwrap_or_else(|err| Some(OutboundMsg::Error(err.to_string())))
     }
 
     fn handle_subscription(&self) -> impl StreamExt<Item = OutboundMsg> + Send + 'static {
@@ -108,11 +126,10 @@ impl<S: Storage + 'static> WsHandler for MusicGptWsHandler<S> {
         }
     }
 
-    async fn handle_error(&self, _: impl Error + Send) -> Option<OutboundMsg> {
-        None
+    async fn handle_error(&self, err: impl Display + Send) -> Option<OutboundMsg> {
+        Some(OutboundMsg::Error(err.to_string()))
     }
 }
-
 
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct IdPair(pub Uuid, pub Uuid);

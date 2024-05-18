@@ -1,9 +1,10 @@
+use std::fmt::Display;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use axum::extract::ws::{Message, WebSocket};
 use futures_util::{pin_mut, SinkExt, StreamExt};
-use serde::de::{DeserializeOwned, Error};
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio::sync::Mutex;
 
@@ -15,7 +16,7 @@ pub trait WsHandler: Sized {
     async fn handle_init(&self) -> Vec<Self::Outbound>;
     async fn handle_inbound_msg(&self, msg: Self::Inbound) -> Option<Self::Outbound>;
     fn handle_subscription(&self) -> impl StreamExt<Item = Self::Outbound> + Send + 'static;
-    async fn handle_error(&self, _: impl Error + Send) -> Option<Self::Outbound>;
+    async fn handle_error(&self, _: impl Display + Send) -> Option<Self::Outbound>;
 
     async fn handle(self, ws: WebSocket) {
         let (tx, mut rx) = ws.split();
@@ -65,4 +66,3 @@ pub trait WsHandler: Sized {
         task.abort()
     }
 }
-

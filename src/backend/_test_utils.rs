@@ -2,16 +2,27 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use rand::distributions::Alphanumeric;
+use rand::{Rng, thread_rng};
 
 use crate::backend::audio_generation_fanout::{AudioGenerationError, AudioGenerationProgress, AudioGenerationResult, AudioGenerationStart, GenerationMessage};
 use crate::backend::audio_generation_backend::{AudioGenerationRequest, BackendOutboundMsg, JobProcessor};
+use crate::backend::music_gpt_chat::Chat;
 use crate::backend::music_gpt_ws_handler::{Info, OutboundMsg};
+use crate::storage::AppFs;
 
 impl OutboundMsg {
-    pub(crate) fn unwrap_init(self) -> Info {
+    pub(crate) fn unwrap_info(self) -> Info {
         match self {
-            OutboundMsg::Init(p) => p,
+            OutboundMsg::Info(p) => p,
             _ => panic!("msg was not OutboundMsg::Init, it was {self:?}"),
+        }
+    }
+
+    pub(crate) fn unwrap_chats(self) -> Vec<Chat> {
+        match self {
+            OutboundMsg::Chats(p) => p,
+            _ => panic!("msg was not OutboundMsg::Chats, it was {self:?}"),
         }
     }
 
@@ -51,7 +62,7 @@ impl BackendOutboundMsg {
             _ => panic!("msg was not Progress, it was {self:?}"),
         }
     }
-    
+
     pub(crate) fn unwrap_progress(self) -> (String, f32) {
         match self {
             BackendOutboundMsg::Progress(p) => p,
@@ -115,5 +126,19 @@ impl JobProcessor for DummyJobProcessor {
         }
 
         Ok(result)
+    }
+}
+
+pub fn rand_string() -> String {
+    thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(7)
+        .map(char::from)
+        .collect()
+}
+
+impl AppFs {
+    pub fn new_tmp() -> Self {
+        Self::new(format!("/tmp/musicgpt-tests/{}", rand_string()))
     }
 }

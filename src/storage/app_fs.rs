@@ -50,14 +50,16 @@ impl Storage for AppFs {
     async fn list(&self, path: &str) -> std::io::Result<Vec<String>> {
         let (abs_dir, _, _) = self.relative_file_to_path_buf(path);
         let mut files = vec![];
-        let mut dir = tokio::fs::read_dir(abs_dir).await?;
-        while let Some(entry) = dir.next_entry().await? {
-            let Ok(meta) = entry.metadata().await else {
-                continue;
-            };
-            if !meta.is_file() {
-                continue;
+        let mut dir = match tokio::fs::read_dir(abs_dir).await {
+            Ok(v) => v,
+            Err(err) => {
+                if err.kind() == std::io::ErrorKind::NotFound {
+                    return Ok(vec![])
+                }
+                return Err(err)
             }
+        };
+        while let Some(entry) = dir.next_entry().await? {
             let entry_path = entry.path();
             let Ok(rel) = entry_path.strip_prefix(&self.root) else {
                 continue;
