@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { v4 as uuid } from "uuid";
 
-import { useBackend } from "./useBackend.ts";
+import { FILES_URL, useBackend } from "./useBackend.ts";
 import {
   AudioGenerationError,
   AudioGenerationProgress,
@@ -150,7 +150,7 @@ class ChatHistory {
       type: "ai",
       id: msg.id,
       progress: 1,
-      url: 'relpath' in msg ? msg.relpath : undefined,
+      url: 'relpath' in msg ? (FILES_URL + '/' + msg.relpath) : undefined,
       error: 'error' in msg ? msg.error : undefined,
     }
     this.aiDict[msg.id] = aiMsg
@@ -177,10 +177,10 @@ class ChatHistory {
         const msg: AiMessage = {
           type: 'ai',
           id: entry.Ai.id,
-          url: entry.Ai.relpath || undefined,
-          error: entry.Ai.error || undefined,
           progress: 1,
         }
+        if (entry.Ai.relpath) msg.url = FILES_URL + '/' + entry.Ai.relpath
+        if (entry.Ai.error) msg.error = entry.Ai.error
         chatHistory.list.push(msg)
         chatHistory.aiDict[msg.id] = msg
       }
