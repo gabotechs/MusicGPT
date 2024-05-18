@@ -77,16 +77,17 @@ jobs:
           key: ${{ runner.os }}-ort.pyke.io
       - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
 
-  smoke-test-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-#      - uses: actions/cache@v4
-#        with:
-#          path: TODO: Where are pyke files located
-#          key: ${{ runner.os }}-ort.pyke.io
-      - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
+# TODO: this is super super slow
+#  smoke-test-windows:
+#    runs-on: windows-latest
+#    steps:
+#      - uses: actions/checkout@v4
+#      - uses: dtolnay/rust-toolchain@stable
+##      - uses: actions/cache@v4
+##        with:
+##          path: TODO: Where are pyke files located
+##          key: ${{ runner.os }}-ort.pyke.io
+#      - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
 
   tag:
     if: github.ref == 'refs/heads/main'
