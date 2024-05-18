@@ -136,7 +136,10 @@ mod tests {
         assert_eq!(p.id, id);
         assert_eq!(p.chat_id, chat_id);
         assert_eq!(p.relpath, format!("audios/{id}.wav"));
-
+        
+        let res = reqwest::get(format!("http://localhost:{port}/files/audios/{id}.wav")).await?;
+        assert_eq!(res.status(), 200);
+        
         Ok(())
     }
 
