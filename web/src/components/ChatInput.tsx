@@ -1,18 +1,19 @@
 import React, { useEffect, useRef, useState } from "react";
-import { LoadingIcon } from "./Icons/LoadingIcon.tsx";
-import { StopIcon } from "./Icons/StopIcon.tsx";
-import { SendIcon } from "./Icons/SendIcon.tsx";
+import { LoadingIcon } from "../Icons/LoadingIcon.tsx";
+import { StopIcon } from "../Icons/StopIcon.tsx";
+import { SendIcon } from "../Icons/SendIcon.tsx";
 
 export interface ChatInputProps {
   className?: string;
   loading: boolean;
+  inputFocusToken?: string
 
   onSend (text: string, secs: number): void;
 
   onCancel (): void;
 }
 
-const ChatInput = ({ className = '', onSend, loading, onCancel }: ChatInputProps) => {
+const ChatInput = ({ className = '', inputFocusToken, onSend, loading, onCancel }: ChatInputProps) => {
   const [audioDuration, setAudioDuration] = useState(10)
 
   const [aborting, setAborting] = useState(false)
@@ -21,8 +22,13 @@ const ChatInput = ({ className = '', onSend, loading, onCancel }: ChatInputProps
     if (!loading) setAborting(false)
   }, [loading])
 
+
   const inputRef = useRef<HTMLInputElement>(null);
   const [inputValue, setInputValue] = useState("");
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [inputFocusToken])
 
   const handleChange: React.ChangeEventHandler<HTMLInputElement> = (e) => {
     setInputValue(e.target.value);
@@ -86,7 +92,7 @@ const ChatInput = ({ className = '', onSend, loading, onCancel }: ChatInputProps
             handleSubmit(e)
           }
         }}
-        className="p-2 bg-blue-500 rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-500 text-white "
+        className="p-2 bg-blue-500 rounded-lg hover:bg-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-500 text-white"
       >
         {(() => {
           if (aborting) return LoadingIcon()

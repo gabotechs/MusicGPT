@@ -37,7 +37,7 @@ mod music_gen_outputs;
 mod music_gen_text_encoder;
 mod storage;
 mod tensor_ops;
-mod ui;
+mod backend;
 
 #[derive(Clone, Copy, ValueEnum)]
 enum Model {
@@ -137,9 +137,9 @@ async fn main() -> anyhow::Result<()> {
 
     if args.prompt.is_empty() {
         let (text_encoder, decoder, audio_encodec) = build_music_gen_parts(&args).await?;
-        ui::run(
+        backend::run(
             storage,
-            ui::MusicGenJobProcessor {
+            backend::MusicGenJobProcessor {
                 name: args.model.to_string(),
                 device,
                 text_encoder,

@@ -7,7 +7,8 @@
     "dev": "VITE_BACKEND_URL=http://localhost:8642 vite",
     "build": "tsc && vite build",
     "lint": "eslint MusicGPT Web UI --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "deps": "dep-tree check"
   },
   "dependencies": {
     "@rspc/client": "^0.2.0",
@@ -18,6 +19,7 @@
     "uuid": "^9.0.1"
   },
   "devDependencies": {
+    "@dep-tree/cli": "^0.19.9",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "@types/uuid": "^9.0.8",

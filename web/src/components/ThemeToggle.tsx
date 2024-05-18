@@ -1,7 +1,6 @@
-// ThemeToggle.tsx
 import React from 'react';
-import { LightTheme } from "./Icons/LightTheme.tsx";
-import { DarkTheme } from "./Icons/DarkTheme.tsx";
+import { LightTheme } from "../Icons/LightTheme.tsx";
+import { DarkTheme } from "../Icons/DarkTheme.tsx";
 
 interface ThemeToggleProps {
   className?: string;

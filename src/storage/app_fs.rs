@@ -50,14 +50,16 @@ impl Storage for AppFs {
     async fn list(&self, path: &str) -> std::io::Result<Vec<String>> {
         let (abs_dir, _, _) = self.relative_file_to_path_buf(path);
         let mut files = vec![];
-        let mut dir = tokio::fs::read_dir(abs_dir).await?;
-        while let Some(entry) = dir.next_entry().await? {
-            let Ok(meta) = entry.metadata().await else {
-                continue;
-            };
-            if !meta.is_file() {
-                continue;
+        let mut dir = match tokio::fs::read_dir(abs_dir).await {
+            Ok(v) => v,
+            Err(err) => {
+                if err.kind() == std::io::ErrorKind::NotFound {
+                    return Ok(vec![])
+                }
+                return Err(err)
             }
+        };
+        while let Some(entry) = dir.next_entry().await? {
             let entry_path = entry.path();
             let Ok(rel) = entry_path.strip_prefix(&self.root) else {
                 continue;
@@ -74,6 +76,34 @@ impl Storage for AppFs {
         let (to_filepath, to_dirpath, _) = self.relative_file_to_path_buf(to);
         tokio::fs::create_dir_all(to_dirpath).await?;
         tokio::fs::rename(from_filepath, to_filepath).await
+    }
+
+    async fn rm(&self, path: &str) -> std::io::Result<bool> {
+        let (abs_filepath, _, _) = self.relative_file_to_path_buf(path);
+        match tokio::fs::remove_file(abs_filepath).await {
+            Ok(_) => Ok(true),
+            Err(err) => {
+                if err.kind() == std::io::ErrorKind::NotFound {
+                    Ok(false)
+                } else {
+                    Err(err)
+                }
+            }
+        }
+    }
+
+    async fn rm_rf(&self, path: &str) -> std::io::Result<bool> {
+        let (abs_dirpath, _, _) = self.relative_file_to_path_buf(path);
+        match tokio::fs::remove_dir_all(abs_dirpath).await {
+            Ok(_) => Ok(true),
+            Err(err) => {
+                if err.kind() == std::io::ErrorKind::NotFound {
+                    Ok(false)
+                } else {
+                    Err(err)
+                }
+            }
+        }
     }
 }
 

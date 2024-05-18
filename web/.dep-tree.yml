@@ -1,0 +1,9 @@
+check:
+  entrypoints:
+    - src/main.tsx
+  allow:
+    src/components/**:
+      - src/components/**
+      - src/Icons/**
+    src/backend/**:
+      - src/backend/**

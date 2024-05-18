@@ -20,6 +20,8 @@ pub trait Storage: Sync + Send + Clone {
     async fn create(&self, path: &str) -> std::io::Result<Self::File>;
     async fn list(&self, path: &str) -> std::io::Result<Vec<String>>;
     async fn mv(&self, from: &str, to: &str) -> std::io::Result<()>;
+    async fn rm(&self, path: &str) -> std::io::Result<bool>;
+    async fn rm_rf(&self, path: &str) -> std::io::Result<bool>;
 }
 
 #[cfg(test)]
@@ -55,6 +57,7 @@ mod tests {
         let content = content.unwrap();
         assert_eq!(String::from_utf8_lossy(&content), "test content");
 
+        // it should list files
         for i in 0..3 {
             let mut file = s.create(&format!("list/{i}.txt")).await?;
             file.write_all(format!("{i}").as_bytes()).await?;
@@ -63,6 +66,35 @@ mod tests {
         assert_eq!(list, vec!["list/0.txt", "list/1.txt", "list/2.txt"]);
         let list = s.list("list").await?;
         assert_eq!(list, vec!["list/0.txt", "list/1.txt", "list/2.txt"]);
+        
+        // listing empty directory returns empty array
+        let list = s.list("NON_EXISTING/").await?;
+        assert_eq!(list, Vec::<String>::new());
+        
+        // it should remove a single file
+        s.write("to_remove/foo.txt", "foo").await?;
+        assert!(s.exists("to_remove/foo.txt").await?);
+        let is_removed = s.rm("to_remove/foo.txt").await?;
+        assert!(is_removed);
+        assert!(!s.exists("to_remove/foo.txt").await?);
+        
+        // it should allow removing non-existing files without failing
+        let is_removed = s.rm("NON_EXISTING/foo.txt").await?;
+        assert!(!is_removed);
+        
+        // it should remove multiple files
+        for i in 0..3 {
+            let mut file = s.create(&format!("to_remove/{i}.txt")).await?;
+            file.write_all(format!("{i}").as_bytes()).await?;
+        }
+        for i in 0..3 {
+            assert!(s.exists(&format!("to_remove/{i}.txt")).await?);
+        }
+        let is_removed = s.rm_rf("to_remove").await?;
+        assert!(is_removed);
+        for i in 0..3 {
+            assert!(!s.exists(&format!("to_remove/{i}.txt")).await?);
+        }
 
         Ok(())
     }

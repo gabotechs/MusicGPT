@@ -1,5 +1,5 @@
 import React from 'react';
-import { ErrorIcon } from "./Icons/ErrorIcon.tsx";
+import { ErrorIcon } from "../Icons/ErrorIcon.tsx";
 
 interface AudioFailureProps {
   className?: string;

@@ -1,6 +1,6 @@
 import H5AudioPlayer from "react-h5-audio-player";
 import './AudioSucess.css'
-import { DownloadIcon } from "./Icons/DownloadIcon.tsx";
+import { DownloadIcon } from "../Icons/DownloadIcon.tsx";
 
 
 export function AudioSuccess ({ className = '', src, ...rest }: typeof H5AudioPlayer.defaultProps) {
