@@ -55,6 +55,12 @@ runs:
         path: /c/Users/runneradmin/AppData/ort.pyke.io
         key: ${{ runner.os }}-ort.pyke.io
 
+    - if: runner.os == 'Windows'
+      shell: bash
+      run: |
+        echo "PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        echo "OPENSSL_SRC_PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
     - uses: Swatinem/rust-cache@v2
       with:
         key: ${{ runner.os }}-rust-cache
