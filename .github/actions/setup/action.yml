@@ -2,15 +2,8 @@ name: Setup
 description: Setup environment for CI
 
 inputs:
-  toolchain:
-    description: Rust toolchain specification -- see https://rust-lang.github.io/rustup/concepts/toolchains.html#toolchain-specification
-    required: true
-    default: stable
   targets:
     description: Comma-separated list of target triples to install for this toolchain
-    required: false
-  target:
-    description: Alias for `targets`
     required: false
   components:
     description: Comma-separated list of components to be additionally installed
@@ -26,9 +19,8 @@ runs:
 
     - uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: ${{ inputs.toolchain }}
+        toolchain: stable
         targets: ${{ inputs.targets }}
-        target: ${{ inputs.target }}
         components: ${{ inputs.components }}
 
     - if: runner.os == 'Linux'
@@ -41,19 +33,19 @@ runs:
       uses: actions/cache@v4
       with:
         path: /home/runner/.cache/ort.pyke.io
-        key: ${{ runner.os }}-ort.pyke.io
+        key: ${{ runner.os }}-${{ inputs.targets }}-ort.pyke.io
 
     - if: runner.os == 'macOS'
       uses: actions/cache@v4
       with:
         path: /Users/runner/Library/Caches/ort.pyke.io
-        key: ${{ runner.os }}-ort.pyke.io
+        key: ${{ runner.os }}-${{ inputs.targets }}-ort.pyke.io
 
     - if: runner.os == 'Windows'
       uses: actions/cache@v4
       with:
         path: /c/Users/runneradmin/AppData/ort.pyke.io
-        key: ${{ runner.os }}-ort.pyke.io
+        key: ${{ runner.os }}-${{ inputs.targets }}-ort.pyke.io
 
     - if: runner.os == 'Windows'
       shell: powershell
@@ -63,4 +55,4 @@ runs:
 
     - uses: Swatinem/rust-cache@v2
       with:
-        key: ${{ runner.os }}-rust-cache
+        key: ${{ runner.os }}-${{ inputs.targets }}-rust-cache

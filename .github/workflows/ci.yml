@@ -56,10 +56,18 @@ jobs:
       - if: runner.os == 'Windows'
         shell: bash
         run: |
-          ls /c/Users/runneradmin/AppData
-          ls /c/Users/RUNNER~1/AppData
-          ls /a
-          
+          echo "/c/Users/runneradmin/AppData/Local"
+          ls /c/Users/runneradmin/AppData/Local
+          echo "/c/Users/runneradmin/AppData/LocalLow"
+          ls /c/Users/runneradmin/AppData/LocalLow
+          echo "/c/Users/runneradmin/AppData/LocalRoaming"
+          ls /c/Users/runneradmin/AppData/LocalRoaming
+          echo "/c/Users/RUNNER~1/AppData/Local"
+          ls /c/Users/RUNNER~1/AppData/Local
+          echo "/c/Users/RUNNER~1/AppData/LocalLow"
+          ls /c/Users/RUNNER~1/AppData/LocalLow
+          echo "/c/Users/RUNNER~1/AppData/LocalRoaming"
+          ls /c/Users/RUNNER~1/AppData/LocalRoaming
 
   tag:
     if: github.ref == 'refs/heads/main'
@@ -73,10 +81,9 @@ jobs:
         with:
           fetch-depth: '0' # https://github.com/actions/checkout/issues/217
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup
       - run: cargo install cargo-release
-      - name: Bump versions
-        run: cargo release version $(.github/semver.sh) -x --no-confirm
+      - run: cargo release version $(.github/semver.sh) -x --no-confirm
       - name: Tag
         id: tag
         run: |
@@ -99,11 +106,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: librust-alsa-sys-dev
-          version: 1.0
+      - uses: ./.github/actions/setup
       - run: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -127,55 +130,28 @@ jobs:
           git commit -m "Brew formula update for musicgpt version v${{ needs.tag.outputs.version }}"
           git push
 
-  upload-x86_64-unknown-linux-gnu:
+  upload:
     needs: tag
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: librust-alsa-sys-dev
-          version: 1.0
-      - run: cargo build --release --features cuda
-      - run: ./.github/bundle-release.sh x86_64-unknown-linux-gnu
-      - run: gh release upload v${{ needs.tag.outputs.version }} x86_64-unknown-linux-gnu.tar.gz
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
 
-  upload-aarch64-apple-darwin:
-    needs: tag
-    runs-on: macos-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release
-      - run: ./.github/bundle-release.sh aarch64-apple-darwin
-      - run: gh release upload v${{ needs.tag.outputs.version }} aarch64-apple-darwin.tar.gz
-
-  upload-x86_64-apple-darwin:
-    needs: tag
-    runs-on: macos-latest # <- this is an M1.
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup
         with:
-          # Cross compile on a M1 for Intel processors.
-          targets: x86_64-apple-darwin
-      - run: cargo build --release --target x86_64-apple-darwin
-      - run: ./.github/bundle-release.sh x86_64-apple-darwin
-      - run: gh release upload v${{ needs.tag.outputs.version }} x86_64-apple-darwin.tar.gz
-
-  upload-x86_64-pc-windows-msvc:
-    needs: tag
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-      - run: |
-          echo "PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          echo "OPENSSL_SRC_PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-      - run: cargo build --release --target x86_64-pc-windows-msvc
-      - run: ./.github/bundle-release.sh x86_64-pc-windows-msvc
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }}
+      - run: ./.github/bundle-release.sh ${{ matrix.target }}
         shell: bash
-      - run: gh release upload v${{ needs.tag.outputs.version }} x86_64-pc-windows-msvc.tar.gz
+      - run: gh release upload v${{ needs.tag.outputs.version }} ${{ matrix.target }}.tar.gz
