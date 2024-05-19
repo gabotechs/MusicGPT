@@ -31,6 +31,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
+        with:
+          components: clippy
       - run: cargo clippy
 
   unit-test:
@@ -40,22 +42,12 @@ jobs:
       - uses: ./.github/actions/setup
       - run: cargo test
 
-  smoke-test-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
-      - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
+  smoke-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
-  smoke-test-mac:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup
-      - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
-
-  smoke-test-windows:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
@@ -67,9 +59,7 @@ jobs:
     needs:
       - unit-test
       - clippy
-      - smoke-test-linux
-      - smoke-test-mac
-      - smoke-test-windows
+      - smoke-test
     steps:
       - uses: actions/checkout@v4
         with:
