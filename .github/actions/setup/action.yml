@@ -40,19 +40,19 @@ runs:
     - if: runner.os == 'Linux'
       uses: actions/cache@v4
       with:
-        path: ${{ env.HOME }}/.cache/ort.pyke.io # <- onnxruntime libs are placed here by ort
+        path: /home/runner/.cache/ort.pyke.io
         key: ${{ runner.os }}-ort.pyke.io
 
-    - if: runner.os == 'Macos'
+    - if: runner.os == 'macOS'
       uses: actions/cache@v4
       with:
-        path: ${{ env.HOME }}/Library/Caches/ort.pyke.io # <- onnxruntime libs are placed here by ort
+        path: /Users/runner/Library/Caches/ort.pyke.io
         key: ${{ runner.os }}-ort.pyke.io
 
     - if: runner.os == 'Windows'
       uses: actions/cache@v4
       with:
-        path: ${{ env.HOME }}/AppData/ort.pyke.io # <- onnxruntime libs are placed here by ort
+        path: /c/Users/runneradmin/AppData/ort.pyke.io
         key: ${{ runner.os }}-ort.pyke.io
 
     - uses: Swatinem/rust-cache@v2
