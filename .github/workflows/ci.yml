@@ -44,6 +44,7 @@ jobs:
 
   smoke-test:
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
 
@@ -68,9 +69,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo install cargo-release
       - name: Bump versions
-        run: |
-          SEM_VER=$(.github/semver.sh)
-          cargo release version $SEM_VER -x --no-confirm
+        run: cargo release version $(.github/semver.sh) -x --no-confirm
       - name: Tag
         id: tag
         run: |

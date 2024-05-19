@@ -56,7 +56,7 @@ runs:
         key: ${{ runner.os }}-ort.pyke.io
 
     - if: runner.os == 'Windows'
-      shell: bash
+      shell: powershell
       run: |
         echo "PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
         echo "OPENSSL_SRC_PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
