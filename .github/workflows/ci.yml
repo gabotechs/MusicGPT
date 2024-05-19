@@ -30,35 +30,35 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: .github/actions/setup
+      - uses: ./.github/actions/setup
       - run: cargo clippy
 
   unit-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: .github/actions/setup
+      - uses: ./.github/actions/setup
       - run: cargo test
 
   smoke-test-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: .github/actions/setup
+      - uses: ./.github/actions/setup
       - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
 
   smoke-test-mac:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: .github/actions/setup
+      - uses: ./.github/actions/setup
       - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
 
   smoke-test-windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: .github/actions/setup
+      - uses: ./.github/actions/setup
       - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
 
   tag:
