@@ -9,15 +9,15 @@ import { ChatHistory } from "./ChatHistory.tsx";
 import { useChats } from "./backend/useChats.ts";
 import ResponsiveDrawer, { ResponsiveDrawerEntry } from "./components/ResponsiveDrawer.tsx";
 import { ToggleButton } from "./components/ToggleButton.tsx";
-
-// const DEFAULT_CHAT_ID = '39b099b5-9eaf-4ac3-8d4b-1380369090b5'
+import { useRoutedApp } from "./RoutedAppHooks.ts";
 
 function App () {
+  const { chatId, goToChat } = useRoutedApp()
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [drawerOpen, setDrawerOpen] = useState(false)
 
-  const { chats, activeChat, setActiveChat, setChatMetadata } = useChats()
-  const { sendMessage, abortLast, history } = useChat(activeChat, setActiveChat)
+  const { chats, setChatMetadata } = useChats()
+  const { sendMessage, abortLast, history } = useChat(chatId, goToChat)
 
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -44,8 +44,8 @@ function App () {
         open={drawerOpen}
         setOpen={setDrawerOpen}
         entries={drawerEntries}
-        selectedEntry={activeChat}
-        onSelectEntry={setActiveChat}
+        selectedEntry={chatId}
+        onSelectEntry={goToChat}
       />
       <div className="absolute top-0 w-full z-10 flex items-center justify-between px-4 py-2">
         <div className="w-1/3 flex flex-row justify-start">
@@ -64,7 +64,7 @@ function App () {
       <div className="absolute bottom-0 w-full">
         <ChatInput
           className={'max-w-3xl p-2 mx-auto'}
-          inputFocusToken={activeChat}
+          inputFocusToken={chatId}
           onSend={sendMessage}
           onCancel={abortLast}
           loading={(history?.lastAi()?.progress ?? 1) < 1}

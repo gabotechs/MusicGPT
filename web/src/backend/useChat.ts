@@ -23,6 +23,7 @@ export interface AiMessage {
   progress: number;
   url?: string
   error?: string;
+  justSucceeded: boolean
 }
 
 export type ChatMessage = UserMessage | AiMessage;
@@ -129,6 +130,7 @@ class ChatHistory {
       type: "ai",
       id: msg.id,
       progress: msg.progress,
+      justSucceeded: false
     }
     this.aiDict[msg.id] = aiMsg
     this.list.push(aiMsg)
@@ -144,6 +146,7 @@ class ChatHistory {
       } else if ('error' in msg) {
         this.aiDict[msg.id].error = msg.error
       }
+      this.aiDict[msg.id].justSucceeded = true
       return this.shallowCopy()
     }
     const aiMsg: AiMessage = {
@@ -152,6 +155,7 @@ class ChatHistory {
       progress: 1,
       url: 'relpath' in msg ? relpathToUrl(msg.relpath) : undefined,
       error: 'error' in msg ? msg.error : undefined,
+      justSucceeded: false
     }
     this.aiDict[msg.id] = aiMsg
     this.list.push(aiMsg)
@@ -178,6 +182,7 @@ class ChatHistory {
           type: 'ai',
           id: entry.Ai.id,
           progress: 1,
+          justSucceeded: false
         }
         if (entry.Ai.relpath) msg.url = relpathToUrl(entry.Ai.relpath)
         if (entry.Ai.error) msg.error = entry.Ai.error

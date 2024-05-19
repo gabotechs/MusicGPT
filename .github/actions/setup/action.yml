@@ -1,0 +1,58 @@
+name: Setup
+description: Setup environment for CI
+
+inputs:
+  targets:
+    description: Comma-separated list of target triples to install for this toolchain
+    required: false
+  components:
+    description: Comma-separated list of components to be additionally installed
+    required: false
+
+runs:
+  using: 'composite'
+  steps:
+    - shell: bash
+      run: |
+        echo $HOME
+        echo ${{ runner.os }}
+
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        targets: ${{ inputs.targets }}
+        components: ${{ inputs.components }}
+
+    - if: runner.os == 'Linux'
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: librust-alsa-sys-dev
+        version: 1.0
+
+    - if: runner.os == 'Linux'
+      uses: actions/cache@v4
+      with:
+        path: /home/runner/.cache/ort.pyke.io
+        key: ${{ runner.os }}-${{ inputs.targets }}-ort.pyke.io
+
+    - if: runner.os == 'macOS'
+      uses: actions/cache@v4
+      with:
+        path: /Users/runner/Library/Caches/ort.pyke.io
+        key: ${{ runner.os }}-${{ inputs.targets }}-ort.pyke.io
+
+    - if: runner.os == 'Windows'
+      uses: actions/cache@v4
+      with:
+        path: C:\\Users\\runneradmin\\AppData\\Local\\ort.pyke.io
+        key: ${{ runner.os }}-${{ inputs.targets }}-ort.pyke.io
+
+    - if: runner.os == 'Windows'
+      shell: powershell
+      run: |
+        echo "PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+        echo "OPENSSL_SRC_PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ runner.os }}-${{ inputs.targets }}-rust-cache

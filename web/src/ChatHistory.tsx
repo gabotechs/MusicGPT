@@ -36,6 +36,7 @@ export function ChatHistory ({ messages, className = '' }: ChatHistoryProps) {
           return <AudioSuccess
             className={'mr-16 self-start mb-8'}
             key={key}
+            autoPlay={msg.justSucceeded}
             src={msg.url}
           />
         } else {

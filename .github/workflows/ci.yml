@@ -30,64 +30,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup
         with:
           components: clippy
-        # https://github.com/Spotifyd/spotifyd/issues/659#issuecomment-737730954
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: librust-alsa-sys-dev
-          version: 1.0
       - run: cargo clippy
 
   unit-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: librust-alsa-sys-dev
-          version: 1.0
+      - uses: ./.github/actions/setup
       - run: cargo test
 
-  smoke-test-linux:
-    runs-on: ubuntu-latest
+  smoke-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: librust-alsa-sys-dev
-          version: 1.0
-      - uses: actions/cache@v4
-        with:
-          path: $HOME/.cache/ort.pyke.io # <- onnxruntime libs are placed here by ort
-          key: ${{ runner.os }}-ort.pyke.io
+      - uses: ./.github/actions/setup
       - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
-
-  smoke-test-mac:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v4
-        with:
-          path: $HOME/Library/Caches/ort.pyke.io # <- onnxruntime libs are placed here by ort
-          key: ${{ runner.os }}-ort.pyke.io
-      - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
-
-# TODO: this is super super slow
-#  smoke-test-windows:
-#    runs-on: windows-latest
-#    steps:
-#      - uses: actions/checkout@v4
-#      - uses: dtolnay/rust-toolchain@stable
-##      - uses: actions/cache@v4
-##        with:
-##          path: TODO: Where are pyke files located
-##          key: ${{ runner.os }}-ort.pyke.io
-#      - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
 
   tag:
     if: github.ref == 'refs/heads/main'
@@ -95,20 +60,15 @@ jobs:
     needs:
       - unit-test
       - clippy
-      - smoke-test-linux
-      - smoke-test-mac
-      - smoke-test-windows
+      - smoke-test
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: '0' # https://github.com/actions/checkout/issues/217
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup
       - run: cargo install cargo-release
-      - name: Bump versions
-        run: |
-          SEM_VER=$(.github/semver.sh)
-          cargo release version $SEM_VER -x --no-confirm
+      - run: cargo release version $(.github/semver.sh) -x --no-confirm
       - name: Tag
         id: tag
         run: |
@@ -131,11 +91,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: librust-alsa-sys-dev
-          version: 1.0
+      - uses: ./.github/actions/setup
       - run: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
@@ -159,55 +115,28 @@ jobs:
           git commit -m "Brew formula update for musicgpt version v${{ needs.tag.outputs.version }}"
           git push
 
-  upload-x86_64-unknown-linux-gnu:
+  upload:
     needs: tag
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: librust-alsa-sys-dev
-          version: 1.0
-      - run: cargo build --release --features cuda
-      - run: ./.github/bundle-release.sh x86_64-unknown-linux-gnu
-      - run: gh release upload v${{ needs.tag.outputs.version }} x86_64-unknown-linux-gnu.tar.gz
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
 
-  upload-aarch64-apple-darwin:
-    needs: tag
-    runs-on: macos-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo build --release
-      - run: ./.github/bundle-release.sh aarch64-apple-darwin
-      - run: gh release upload v${{ needs.tag.outputs.version }} aarch64-apple-darwin.tar.gz
-
-  upload-x86_64-apple-darwin:
-    needs: tag
-    runs-on: macos-latest # <- this is an M1.
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/setup
         with:
-          # Cross compile on a M1 for Intel processors.
-          targets: x86_64-apple-darwin
-      - run: cargo build --release --target x86_64-apple-darwin
-      - run: ./.github/bundle-release.sh x86_64-apple-darwin
-      - run: gh release upload v${{ needs.tag.outputs.version }} x86_64-apple-darwin.tar.gz
-
-  upload-x86_64-pc-windows-msvc:
-    needs: tag
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
-      - run: |
-          echo "PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          echo "OPENSSL_SRC_PERL=$((where.exe perl)[0])" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-      - run: cargo build --release --target x86_64-pc-windows-msvc
-      - run: ./.github/bundle-release.sh x86_64-pc-windows-msvc
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }}
+      - run: ./.github/bundle-release.sh ${{ matrix.target }}
         shell: bash
-      - run: gh release upload v${{ needs.tag.outputs.version }} x86_64-pc-windows-msvc.tar.gz
+      - run: gh release upload v${{ needs.tag.outputs.version }} ${{ matrix.target }}.tar.gz
