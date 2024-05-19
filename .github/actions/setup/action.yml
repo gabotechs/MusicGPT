@@ -56,3 +56,5 @@ runs:
         key: ${{ runner.os }}-ort.pyke.io
 
     - uses: Swatinem/rust-cache@v2
+      with:
+        key: ${{ runner.os }}-rust-cache
