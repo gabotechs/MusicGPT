@@ -1,0 +1,40 @@
+name: Setup
+description: Setup environment for CI
+runs:
+  using: 'composite'
+  steps:
+    - shell: bash
+      run: |
+        echo $HOME
+        echo ${{ runner.os }}
+
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+
+    - if: runner.os == 'Linux'
+      shell: bash
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: librust-alsa-sys-dev
+        version: 1.0
+
+    - if: runner.os == 'Linux'
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.HOME }}/.cache/ort.pyke.io # <- onnxruntime libs are placed here by ort
+        key: ${{ runner.os }}-ort.pyke.io
+
+    - if: runner.os == 'Macos'
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.HOME }}/Library/Caches/ort.pyke.io # <- onnxruntime libs are placed here by ort
+        key: ${{ runner.os }}-ort.pyke.io
+
+    - if: runner.os == 'Windows'
+      uses: actions/cache@v4
+      with:
+        path: ${{ env.HOME }}/AppData/ort.pyke.io # <- onnxruntime libs are placed here by ort
+        key: ${{ runner.os }}-ort.pyke.io
+
+    - uses: Swatinem/rust-cache@v2

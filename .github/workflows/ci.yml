@@ -30,64 +30,36 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-        # https://github.com/Spotifyd/spotifyd/issues/659#issuecomment-737730954
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: librust-alsa-sys-dev
-          version: 1.0
+      - uses: .github/actions/setup
       - run: cargo clippy
 
   unit-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: librust-alsa-sys-dev
-          version: 1.0
+      - uses: .github/actions/setup
       - run: cargo test
 
   smoke-test-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: librust-alsa-sys-dev
-          version: 1.0
-      - uses: actions/cache@v4
-        with:
-          path: $HOME/.cache/ort.pyke.io # <- onnxruntime libs are placed here by ort
-          key: ${{ runner.os }}-ort.pyke.io
+      - uses: .github/actions/setup
       - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
 
   smoke-test-mac:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: actions/cache@v4
-        with:
-          path: $HOME/Library/Caches/ort.pyke.io # <- onnxruntime libs are placed here by ort
-          key: ${{ runner.os }}-ort.pyke.io
+      - uses: .github/actions/setup
       - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
 
-# TODO: this is super super slow
-#  smoke-test-windows:
-#    runs-on: windows-latest
-#    steps:
-#      - uses: actions/checkout@v4
-#      - uses: dtolnay/rust-toolchain@stable
-##      - uses: actions/cache@v4
-##        with:
-##          path: TODO: Where are pyke files located
-##          key: ${{ runner.os }}-ort.pyke.io
-#      - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
+  smoke-test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: .github/actions/setup
+      - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
 
   tag:
     if: github.ref == 'refs/heads/main'
