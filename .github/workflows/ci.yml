@@ -53,21 +53,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
-      - if: runner.os == 'Windows'
-        shell: bash
-        run: |
-          echo "/c/Users/runneradmin/AppData/Local"
-          ls /c/Users/runneradmin/AppData/Local
-          echo "/c/Users/runneradmin/AppData/LocalLow"
-          ls /c/Users/runneradmin/AppData/LocalLow
-          echo "/c/Users/runneradmin/AppData/LocalRoaming"
-          ls /c/Users/runneradmin/AppData/LocalRoaming
-          echo "/c/Users/RUNNER~1/AppData/Local"
-          ls /c/Users/RUNNER~1/AppData/Local
-          echo "/c/Users/RUNNER~1/AppData/LocalLow"
-          ls /c/Users/RUNNER~1/AppData/LocalLow
-          echo "/c/Users/RUNNER~1/AppData/LocalRoaming"
-          ls /c/Users/RUNNER~1/AppData/LocalRoaming
 
   tag:
     if: github.ref == 'refs/heads/main'
