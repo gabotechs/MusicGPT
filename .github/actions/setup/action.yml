@@ -44,7 +44,7 @@ runs:
     - if: runner.os == 'Windows'
       uses: actions/cache@v4
       with:
-        path: /c/Users/runneradmin/AppData/Local/ort.pyke.io
+        path: C:\\Users\\runneradmin\\AppData\\Local\\ort.pyke.io
         key: ${{ runner.os }}-${{ inputs.targets }}-ort.pyke.io
 
     - if: runner.os == 'Windows'
