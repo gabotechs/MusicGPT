@@ -13,7 +13,6 @@ runs:
         components: clippy
 
     - if: runner.os == 'Linux'
-      shell: bash
       uses: awalsh128/cache-apt-pkgs-action@latest
       with:
         packages: librust-alsa-sys-dev
