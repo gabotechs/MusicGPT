@@ -4,7 +4,8 @@ description: Setup environment for CI
 inputs:
   toolchain:
     description: Rust toolchain specification -- see https://rust-lang.github.io/rustup/concepts/toolchains.html#toolchain-specification
-    required: false
+    required: true
+    default: stable
   targets:
     description: Comma-separated list of target triples to install for this toolchain
     required: false
