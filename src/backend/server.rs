@@ -3,25 +3,24 @@ use axum::response::Html;
 use axum::routing::get;
 use axum::Router;
 use tower_http::services::ServeDir;
+use tracing::info;
 
-use crate::storage::AppFs;
-use crate::backend::audio_generation_fanout::audio_generation_fanout;
 use crate::backend::audio_generation_backend::{AudioGenerationBackend, JobProcessor};
-use crate::backend::ws_handler::WsHandler;
+use crate::backend::audio_generation_fanout::audio_generation_fanout;
 use crate::backend::music_gpt_ws_handler::{Info, MusicGptWsHandler};
+use crate::backend::ws_handler::WsHandler;
+use crate::storage::AppFs;
 
-async fn web_app() -> Html<&'static str> {
-    Html(include_str!(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/web/dist/index.html"
-    )))
+pub struct RunOptions {
+    pub port: usize,
+    pub auto_open: bool,
+    pub expose: bool,
 }
 
 pub async fn run<T: JobProcessor + 'static>(
     storage: AppFs,
     processor: T,
-    port: usize,
-    open: bool,
+    opts: RunOptions,
 ) -> anyhow::Result<()> {
     let model = processor.name();
     let device = processor.device();
@@ -38,7 +37,7 @@ pub async fn run<T: JobProcessor + 'static>(
     };
 
     let app = Router::new()
-        .route("/", get(web_app))
+        .fallback(get(web_app))
         .nest_service("/files", ServeDir::new(root_dir))
         .route(
             "/ws",
@@ -48,12 +47,32 @@ pub async fn run<T: JobProcessor + 'static>(
             }),
         );
 
-    let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{port}")).await?;
-    if open {
-        let _ = open::that(format!("http://localhost:{port}"));
+    let port = opts.port;
+    let host = if opts.expose { "0.0.0.0" } else { "127.0.0.1" };
+    let advertised = if opts.expose {
+        hostname::get()
+            .unwrap_or_default()
+            .to_str()
+            .unwrap_or("localhost")
+            .to_string()
+    } else {
+        "localhost".to_string()
+    };
+    let listener = tokio::net::TcpListener::bind(format!("{host}:{port}")).await?;
+    let addr = format!("http://{advertised}:{port}");
+    info!("MusicGPT running at {addr}");
+    if opts.auto_open {
+        let _ = open::that(addr);
     }
 
     Ok(axum::serve(listener, app).await?)
+}
+
+async fn web_app() -> Html<&'static str> {
+    Html(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/web/dist/index.html"
+    )))
 }
 
 #[cfg(test)]
@@ -79,7 +98,12 @@ mod tests {
     fn spawn<P: JobProcessor + 'static>(processor: P) -> usize {
         let app_fs = AppFs::new_tmp();
         let port = PORT.fetch_add(1, Ordering::SeqCst) as usize;
-        tokio::spawn(run(app_fs, processor, port, false));
+        let run_options = RunOptions {
+            port,
+            auto_open: false,
+            expose: false,
+        };
+        tokio::spawn(run(app_fs, processor, run_options));
         port
     }
 
@@ -103,7 +127,7 @@ mod tests {
 
         let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
         msg.unwrap_chats();
-        
+
         let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;
         msg.unwrap_start();
 
@@ -136,10 +160,10 @@ mod tests {
         assert_eq!(p.id, id);
         assert_eq!(p.chat_id, chat_id);
         assert_eq!(p.relpath, format!("audios/{id}.wav"));
-        
+
         let res = reqwest::get(format!("http://localhost:{port}/files/audios/{id}.wav")).await?;
         assert_eq!(res.status(), 200);
-        
+
         Ok(())
     }
 
@@ -160,7 +184,10 @@ mod tests {
 
         tokio::time::sleep(Duration::from_millis(150)).await;
         ws_stream
-            .send(InboundMsg::AbortGeneration(AbortGenerationRequest { id, chat_id }).to_tungstenite_msg())
+            .send(
+                InboundMsg::AbortGeneration(AbortGenerationRequest { id, chat_id })
+                    .to_tungstenite_msg(),
+            )
             .await?;
 
         let msg = OutboundMsg::from_tungstenite_msg(ws_stream.next().await.unwrap()?)?;

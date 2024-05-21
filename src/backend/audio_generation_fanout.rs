@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use tracing::info;
 use uuid::Uuid;
 
 use crate::audio_manager::AudioManager;
@@ -69,6 +70,7 @@ pub fn audio_generation_fanout<S: Storage + 'static>(
                     })
                 }
                 BackendOutboundMsg::Response((id, queue)) => {
+                    info!("Audio generated successfully");
                     let IdPair(chat_id, id) = id.into();
                     let relpath = format!("audios/{}.wav", id);
                     let save_audio = || async {
@@ -96,6 +98,7 @@ pub fn audio_generation_fanout<S: Storage + 'static>(
                     }
                 }
                 BackendOutboundMsg::Failure((id, error)) => {
+                    info!("Error generating audio {error}");
                     let IdPair(chat_id, id) = id.into();
                     let entry = ChatEntry::new_ai_err(chat_id, id, error.clone());
                     let _ = entry.save(&storage).await;

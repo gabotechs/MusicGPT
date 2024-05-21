@@ -1,0 +1,5 @@
+*
+!/src
+!/web/dist
+!Cargo.toml
+!Cargo.lock 

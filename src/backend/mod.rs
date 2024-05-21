@@ -18,6 +18,7 @@ mod tests {
 
     use crate::storage::AppFs;
     use crate::backend::_test_utils::DummyJobProcessor;
+    use crate::backend::RunOptions;
     use crate::backend::server::run;
 
     #[ignore]
@@ -25,7 +26,12 @@ mod tests {
     async fn spawn_dummy_server() -> anyhow::Result<()> {
         let storage = AppFs::new(Path::new("/tmp/dummy-server"));
         let processor = DummyJobProcessor::new(Duration::from_millis(100));
-        run(storage, processor, 8642, false).await
+        let options = RunOptions {
+            port: 8642,
+            auto_open: false,
+            expose: false,
+        };
+        run(storage, processor, options).await
     }
 
     #[ignore]

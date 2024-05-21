@@ -3,8 +3,11 @@ name = "musicgpt"
 license = "MIT"
 version = "0.3.2"
 edition = "2021"
-description = "Generate music samples from natural language prompt locally with your own computer"
+description = "Generate music based on natural language prompts using LLMs running locally"
 keywords = ["llm", "music", "audio", "ai"]
+readme = "README.md"
+repository = "https://github.com/gabotechs/MusicGPT"
+authors = ["gb.mt.me@gmail.com"]
 
 [dependencies]
 openssl = { version = "0.10.59", features = ["vendored"] } # NOTE: neeeded for cross compilations
@@ -26,13 +29,15 @@ cpal = "0.15.3"
 ort = { version = "2.0.0-rc.2", features = ["half"] }
 half = { version = "2.4.1", features = ["num-traits"] }
 lazy_static = "1.4.0"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter", "fmt"] }
+tracing = "0.1.40"
+tracing-subscriber = { version = "0.3.18", features = ["env-filter", "fmt", "time"] }
 async-trait = "0.1.80"
 anyhow = "1.0.83"
 uuid = { version = "1.8.0", features = ["v4", "serde"] }
 text_io = "0.1.12"
 regex = "1.10.4"
 async-stream = "0.3.5"
+hostname = "0.4.0"
 
 # Web UI deps, potentially hide behind a flag
 tokio-util = "0.7.11"
@@ -43,6 +48,7 @@ tower-http = { version = "0.5.2" , features = ["fs"]}
 open = "5.1.2"
 chrono = "0.4.38"
 scopeguard = "1.2.0"
+time = "0.3.36"
 
 [features]
 default = []
