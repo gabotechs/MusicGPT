@@ -28,7 +28,7 @@ from [this link](https://github.com/gabotechs/MusicGPT/releases/latest/download/
 ### Docker (Recommend for running with CUDA)
 
 If you want to run MusicGPT with a CUDA enabled GPU, this is the best way, as you only need to have the basic
-NVIDIA drivers installed in your system, everything else is bundled in the Docker image.
+NVIDIA drivers installed in your system.
 
 ```shell
 docker pull gabotechs/musicgpt
@@ -55,8 +55,12 @@ There are two ways of interacting with MusicGPT: the UI mode and the CLI mode.
 
 ## UI mode
 
-This mode will display a chat-like web application for exchanging prompts with the LLM. It will
-store your chat history and allow you to play the generated music samples whenever you want.
+This mode will display a chat-like web application for exchanging prompts with the LLM. It will:
+- store your chat history 
+- allow you to play the generated music samples whenever you want
+- generate music samples in the background
+- allow you to use the UI in a device different from the one executing the LLMs
+
 You can run the UI by just executing the following command:
 
 ```shell
