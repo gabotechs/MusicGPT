@@ -3,7 +3,9 @@
     <img height="30" src="assets/music-icon.svg" alt="Signway logo"/>
 </h1>
 
-Generate music based on natural language prompts using LLMs running locally.
+<p align="center">
+    Generate music based on natural language prompts using LLMs running locally.
+</p>
 
 # Install
 
