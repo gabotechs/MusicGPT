@@ -6,6 +6,7 @@ use async_trait::async_trait;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use specta::Type;
+use tracing::info;
 use uuid::Uuid;
 
 use crate::backend::audio_generation_backend::{AudioGenerationRequest, BackendInboundMsg};
@@ -93,6 +94,7 @@ impl<S: Storage + 'static> WsHandler for MusicGptWsHandler<S> {
         async move {
             let res = match msg {
                 InboundMsg::GenerateAudioNewChat(req) => {
+                    info!("Generating audio for new chat");
                     let chat = Chat {
                         chat_id: req.chat_id,
                         name: req.prompt.clone(),
@@ -112,6 +114,7 @@ impl<S: Storage + 'static> WsHandler for MusicGptWsHandler<S> {
                     Some(OutboundMsg::Chats(chats))
                 }
                 InboundMsg::GenerateAudio(req) => {
+                    info!("Generating audio for existing chat");
                     self.ai_tx
                         .send(BackendInboundMsg::Request(AudioGenerationRequest {
                             id: IdPair(req.chat_id, req.id).to_string(),
@@ -121,6 +124,7 @@ impl<S: Storage + 'static> WsHandler for MusicGptWsHandler<S> {
                     None
                 }
                 InboundMsg::AbortGeneration(req) => {
+                    info!("Aborting audio generation");
                     let id = IdPair(req.chat_id, req.id).to_string();
                     self.ai_tx.send(BackendInboundMsg::Abort(id))?;
                     None
@@ -131,11 +135,13 @@ impl<S: Storage + 'static> WsHandler for MusicGptWsHandler<S> {
                     Some(OutboundMsg::Chat((chat, history)))
                 }
                 InboundMsg::SetChatMetadata(req) => {
+                    info!("Modifying the chat's metadata");
                     let mut chat = Chat::load(&self.storage, req.chat_id).await?;
                     chat.update_metadata(&self.storage, req.name).await?;
                     None
                 }
                 InboundMsg::DelChat(req) => {
+                    info!("Deleting chat");
                     let chat = Chat::load(&self.storage, req.chat_id).await?;
                     chat.delete(&self.storage).await?;
                     let chats = Chat::load_all(&self.storage).await?;

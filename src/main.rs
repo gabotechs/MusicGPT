@@ -10,6 +10,7 @@ use clap::{Parser, ValueEnum};
 use directories::ProjectDirs;
 use half::f16;
 use lazy_static::lazy_static;
+use log::{error, info};
 use ort::{
     CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider, TensorRTExecutionProvider,
 };
@@ -17,6 +18,9 @@ use regex::Regex;
 use text_io::read;
 use tokenizers::Tokenizer;
 use tokio::fs;
+use tracing::warn;
+use tracing_subscriber::fmt::time::UtcTime;
+use tracing_subscriber::{fmt, EnvFilter};
 
 use crate::loading_bar_factory::LoadingBarFactor;
 use crate::music_gen_audio_encodec::MusicGenAudioEncodec;
@@ -25,6 +29,7 @@ use crate::music_gen_text_encoder::MusicGenTextEncoder;
 use crate::storage::{AppFs, Storage};
 
 mod audio_manager;
+mod backend;
 mod delay_pattern_mask_ids;
 mod fetch_remove_data_file;
 mod loading_bar_factory;
@@ -37,7 +42,6 @@ mod music_gen_outputs;
 mod music_gen_text_encoder;
 mod storage;
 mod tensor_ops;
-mod backend;
 
 #[derive(Clone, Copy, ValueEnum)]
 enum Model {
@@ -69,12 +73,12 @@ impl Display for Model {
 #[command(version, about, long_about = None)]
 struct Args {
     /// The prompt for the LLM.
+    /// If this argument is provided, MusicGPT will enter
+    /// [CLI mode], where audio playback and prompting is managed through the terminal.
+    /// If this argument is omitted, MusicGPT will enter
+    /// [UI mode], where prompting and audio playback is managed through a web application.
     #[arg(default_value = "")]
     prompt: String,
-
-    /// The length of the audio will be generated in seconds.
-    #[arg(long, default_value = "10")]
-    secs: usize,
 
     /// The model to use. Some models are experimental, for example quantized models
     /// have a degraded quality and fp16 models are very slow.
@@ -88,11 +92,7 @@ struct Args {
     #[arg(long, default_value = "false")]
     use_split_decoder: bool,
 
-    /// Output path for the resulting .wav file
-    #[arg(long, default_value = "musicgpt-generated.wav")]
-    output: String,
-
-    /// Force the download of LLM models
+    /// Force the download of LLM models.
     #[arg(long, default_value = "false")]
     force_download: bool,
 
@@ -100,13 +100,33 @@ struct Args {
     #[arg(long, default_value = "false")]
     gpu: bool,
 
-    /// Do not play the audio automatically after inference.
+    /// [CLI mode] The seconds of audio to generate.
+    #[arg(long, default_value = "10")]
+    secs: usize,
+
+    /// [CLI mode] Output path for the resulting .wav file.
+    #[arg(long, default_value = "musicgpt-generated.wav")]
+    output: String,
+
+    /// [CLI mode] Do not play the audio automatically after inference.
     #[arg(long, default_value = "false")]
     no_playback: bool,
 
-    /// Disable interactive mode
+    /// [CLI mode] Disable interactive mode.
     #[arg(long, default_value = "false")]
     no_interactive: bool,
+
+    /// [UI mode] Omits automatically opening the web app in a browser.
+    #[arg(long, default_value = "false")]
+    ui_no_open: bool,
+
+    /// [UI mode] Port in which the MusicGPT web app will run.
+    #[arg(long, default_value = "8642")]
+    ui_port: usize,
+
+    /// [UI mode] Exposes the MusicGPT web app in 0.0.0.0 instead of 127.0.0.1.
+    #[arg(long, default_value = "false")]
+    ui_expose: bool,
 }
 
 impl Args {
@@ -121,15 +141,19 @@ impl Args {
     }
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+lazy_static! {
+    static ref PROJECT_DIRS: ProjectDirs = ProjectDirs::from("com", "gabotechs", "musicgpt")
+        .expect("Could not load project directory");
+}
+
+
+async fn _main() -> anyhow::Result<()> {
     let args = Args::parse();
     args.validate()?;
 
     let mut device = "Cpu".to_string();
     if args.gpu {
-        println!("WARNING: GPU support is experimental, it might not work on most platforms");
+        warn!("GPU support is experimental, it might not work on most platforms");
         device = init_gpu()?;
     }
 
@@ -146,12 +170,36 @@ async fn main() -> anyhow::Result<()> {
                 decoder,
                 audio_encodec,
             },
-            8642,
-            true,
+            backend::RunOptions {
+                port: args.ui_port,
+                auto_open: true,
+                expose: args.ui_expose,
+            },
         )
         .await
     } else {
         cli_interface(&args).await
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    let time_format = time::format_description::parse(
+        "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:3]",
+    )
+    .expect("Failed to create timestamp format");
+    let format = fmt::format()
+        .with_target(false)
+        .with_timer(UtcTime::new(time_format));
+    let filter = EnvFilter::new("info,ort=off");
+
+    tracing_subscriber::fmt()
+        .event_format(format)
+        .with_max_level(tracing::Level::INFO)
+        .with_env_filter(filter)
+        .init();
+    if let Err(err) = _main().await {
+        error!("{err}")
     }
 }
 
@@ -258,9 +306,9 @@ fn init_gpu() -> anyhow::Result<String> {
     let mut providers = vec![];
     for provider in candidates {
         if let Err(err) = provider.register(&dummy_builder) {
-            println!("Could not load {}: {}", provider.as_str(), err);
+            error!("Could not load {}: {}", provider.as_str(), err);
         } else {
-            println!("{} detected", provider.as_str());
+            info!("{} detected", provider.as_str());
             providers.push(provider)
         }
     }
@@ -275,18 +323,6 @@ fn init_gpu() -> anyhow::Result<String> {
     Ok(dev.to_string())
 }
 
-macro_rules! hf_url {
-    ($t: expr) => {
-        (
-            concat!(
-                "https://huggingface.co/gabotechs/music_gen/resolve/main/",
-                $t
-            ),
-            concat!("v1/", $t,),
-        )
-    };
-}
-
 async fn build_music_gen_parts(
     args: &Args,
 ) -> anyhow::Result<(
@@ -294,6 +330,17 @@ async fn build_music_gen_parts(
     Box<dyn MusicGenDecoder>,
     MusicGenAudioEncodec,
 )> {
+    macro_rules! hf_url {
+        ($t: expr) => {
+            (
+                concat!(
+                    "https://huggingface.co/gabotechs/music_gen/resolve/main/",
+                    $t
+                ),
+                concat!("v1/", $t,),
+            )
+        };
+    }
     let remote_file_spec = match (args.model, args.use_split_decoder) {
         (Model::Small, true) => vec![
             hf_url!("small/config.json"),
@@ -481,11 +528,6 @@ async fn build_music_gen_parts(
     Ok((text_encoder, decoder, audio_encodec))
 }
 
-lazy_static! {
-    static ref PROJECT_DIRS: ProjectDirs = ProjectDirs::from("com", "gabotechs", "musicgpt")
-        .expect("Could not load project directory");
-}
-
 async fn download(
     remote_file_spec: Vec<(&'static str, &'static str)>,
     force_download: bool,
@@ -497,7 +539,7 @@ async fn download(
     }
 
     if has_to_download {
-        println!("Some AI models need to be downloaded");
+        info!("Some AI models need to be downloaded, this only needs to be done once");
     }
     let m = LoadingBarFactor::multi();
     let mut tasks = vec![];
@@ -505,12 +547,14 @@ async fn download(
         let bar = m.add(LoadingBarFactor::download_bar(local_filename));
         let storage = storage.clone();
         tasks.push(tokio::spawn(async move {
-            storage.fetch_remote_data_file(
-                remote_file,
-                local_filename,
-                force_download,
-                bar.into_update_callback(),
-            ).await
+            storage
+                .fetch_remote_data_file(
+                    remote_file,
+                    local_filename,
+                    force_download,
+                    bar.into_update_callback(),
+                )
+                .await
         }));
     }
     let mut results = VecDeque::new();
@@ -518,6 +562,9 @@ async fn download(
         results.push_back(task.await??);
     }
     m.clear()?;
+    if has_to_download {
+        info!("AI models downloaded correctly");
+    }
     Ok(results)
 }
 

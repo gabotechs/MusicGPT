@@ -10,6 +10,7 @@ use tokio::io::AsyncWriteExt;
 #[allow(dead_code)]
 pub trait StorageFile: AsyncWriteExt + Unpin {}
 
+#[allow(unused)]
 #[async_trait]
 pub trait Storage: Sync + Send + Clone {
     type File: StorageFile;

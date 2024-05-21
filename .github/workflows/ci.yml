@@ -96,6 +96,26 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
 
+  docker-release:
+    needs: tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v2
+      - uses: docker/setup-buildx-action@v2
+      - uses: docker/login-action@v2
+        with:
+          username: gabotechs
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+      - uses: docker/build-push-action@v4
+        with:
+          context: .
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64a
+          tags: gabotechs/musicgpt:${{ steps.tag.outputs.version }},gabotechs/musicgpt:latest
+
   homebrew-release:
     needs: tag
     runs-on: ubuntu-latest
@@ -123,12 +143,16 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            features: cuda
           - os: macos-latest
             target: aarch64-apple-darwin
+            features: coreml
           - os: macos-latest
             target: x86_64-apple-darwin
+            features: coreml
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+            features: default
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -136,7 +160,7 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           targets: ${{ matrix.target }}
-      - run: cargo build --release --target ${{ matrix.target }}
+      - run: cargo build --release --target ${{ matrix.target }} --features ${{ matrix.features }}
       - run: ./.github/bundle-release.sh ${{ matrix.target }}
         shell: bash
       - run: gh release upload v${{ needs.tag.outputs.version }} ${{ matrix.target }}.tar.gz
