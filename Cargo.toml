@@ -37,7 +37,7 @@ uuid = { version = "1.8.0", features = ["v4", "serde"] }
 text_io = "0.1.12"
 regex = "1.10.4"
 async-stream = "0.3.5"
-nix = { version = "0.28.0", features = ["hostname"] }
+hostname = "0.4.0"
 
 # Web UI deps, potentially hide behind a flag
 tokio-util = "0.7.11"

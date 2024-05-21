@@ -50,8 +50,11 @@ pub async fn run<T: JobProcessor + 'static>(
     let port = opts.port;
     let host = if opts.expose { "0.0.0.0" } else { "127.0.0.1" };
     let advertised = if opts.expose {
-        let hostname = nix::unistd::gethostname().unwrap_or_default();
-        hostname.to_str().unwrap_or_default().to_string()
+        hostname::get()
+            .unwrap_or_default()
+            .to_str()
+            .unwrap_or("localhost")
+            .to_string()
     } else {
         "localhost".to_string()
     };
@@ -94,7 +97,7 @@ mod tests {
 
     fn spawn<P: JobProcessor + 'static>(processor: P) -> usize {
         let app_fs = AppFs::new_tmp();
-        let port =PORT.fetch_add(1, Ordering::SeqCst) as usize; 
+        let port = PORT.fetch_add(1, Ordering::SeqCst) as usize;
         let run_options = RunOptions {
             port,
             auto_open: false,
