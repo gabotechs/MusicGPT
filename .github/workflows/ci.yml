@@ -113,8 +113,8 @@ jobs:
           push: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          platforms: linux/amd64a
-          tags: gabotechs/musicgpt:${{ steps.tag.outputs.version }},gabotechs/musicgpt:latest
+          platforms: linux/amd64
+          tags: gabotechs/musicgpt:${{ needs.tag.outputs.version }},gabotechs/musicgpt:latest
 
   homebrew-release:
     needs: tag
