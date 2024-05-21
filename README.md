@@ -7,6 +7,20 @@
     Generate music based on natural language prompts using LLMs running locally.
 </p>
 
+# Overview
+
+MusicGPT is an application that allows you to run the latest music generation
+AI models locally in a performant way, in any platform and without installing heavy dependencies
+like Python or machine learning frameworks.
+
+Right now it only supports [MusicGen by Meta](https://audiocraft.metademolab.com/musicgen.html),
+but the plan is to support different music generation models transparently to the user.
+
+The main milestones for the project are:
+- [x] Text conditioned music generation
+- [ ] Melody conditioned music generation
+- [ ] Indeterminately long / infinite music streams
+
 # Install
 
 ### Mac and Linux
