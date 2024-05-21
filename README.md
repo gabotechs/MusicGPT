@@ -1,6 +1,6 @@
 <h1 align="center">
-    <img height="50" src="assets/music-icon.svg" alt="Signway logo"/>
     <span> MusicGPT</span>
+    <img height="30" src="assets/music-icon.svg" alt="Signway logo"/>
 </h1>
 
 Generate music based on natural language prompts using LLMs running locally.
