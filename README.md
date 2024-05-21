@@ -38,7 +38,7 @@ Once the image is downloaded, you can run it with:
 docker run -it --gpus all -p 8642:8642 -v ~/.musicgpt:/root/.local/share/musicgpt gabotechs/musicgpt --gpu
 ```
 
-### Using cargo
+### With cargo
 
 If you have the [Rust toolchain](https://www.rust-lang.org/tools/install) installed in your system, you can install it
 with `cargo`.
@@ -49,11 +49,11 @@ cargo install musicgpt
 
 # Usage
 
-There's two ways of interacting with the MusicGPT: the UI mode and the CLI mode.
+There are two ways of interacting with MusicGPT: the UI mode and the CLI mode.
 
 ## UI mode
 
-This mode will display a chat-like web application for exchanging prompts with the LLM models. It will
+This mode will display a chat-like web application for exchanging prompts with the LLM. It will
 store your chat history and allow you to play the generated music samples whenever you want.
 You can run the UI by just executing the following command:
 
