@@ -86,14 +86,14 @@ the following command:
 musicgpt "Create a relaxing LoFi song"
 ```
 
-By default, it produces a sample of 10s, which can be configured
+By default, it produces a sample of 10s, which can be configured up to 30s:
 
 ```shell
 musicgpt "Create a relaxing LoFi song" --secs 30
 ```
 
 There's multiple models available, it will use the smallest one by default, but
-users can opt into a bigger model
+you can opt into a bigger model:
 
 ```shell
 musicgpt "Create a relaxing LoFi song" --model medium
