@@ -3,54 +3,66 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use rand::distributions::Alphanumeric;
-use rand::{Rng, thread_rng};
+use rand::{thread_rng, Rng};
 
-use crate::backend::audio_generation_fanout::{AudioGenerationError, AudioGenerationProgress, AudioGenerationResult, AudioGenerationStart, GenerationMessage};
-use crate::backend::audio_generation_backend::{AudioGenerationRequest, BackendOutboundMsg, JobProcessor};
-use crate::backend::music_gpt_chat::Chat;
+use crate::backend::audio_generation_backend::{
+    AudioGenerationRequest, BackendOutboundMsg, JobProcessor,
+};
+use crate::backend::audio_generation_fanout::{
+    AudioGenerationError, AudioGenerationProgress, AudioGenerationResult, AudioGenerationStart,
+    GenerationMessage,
+};
+use crate::backend::music_gpt_chat::{Chat, ChatEntry};
 use crate::backend::music_gpt_ws_handler::{Info, OutboundMsg};
 use crate::storage::AppFs;
 
 impl OutboundMsg {
-    pub(crate) fn unwrap_info(self) -> Info {
+    pub(crate) fn info(self) -> Info {
         match self {
             OutboundMsg::Info(p) => p,
             _ => panic!("msg was not OutboundMsg::Init, it was {self:?}"),
         }
     }
 
-    pub(crate) fn unwrap_chats(self) -> Vec<Chat> {
+    pub(crate) fn chats(self) -> Vec<Chat> {
         match self {
             OutboundMsg::Chats(p) => p,
             _ => panic!("msg was not OutboundMsg::Chats, it was {self:?}"),
         }
     }
 
-    pub(crate) fn unwrap_start(self) -> AudioGenerationStart {
+    pub(crate) fn start(self) -> AudioGenerationStart {
         match self {
             OutboundMsg::Generation(GenerationMessage::Start(p)) => p,
             _ => panic!("msg was not GenerationMessage::Start, it was {self:?}"),
         }
     }
 
-    pub(crate) fn unwrap_progress(self) -> AudioGenerationProgress {
+    pub(crate) fn progress(self) -> AudioGenerationProgress {
         match self {
             OutboundMsg::Generation(GenerationMessage::Progress(p)) => p,
             _ => panic!("msg was not GenerationMessage::Progress, it was {self:?}"),
         }
     }
 
-    pub(crate) fn unwrap_result(self) -> AudioGenerationResult {
+    pub(crate) fn result(self) -> AudioGenerationResult {
         match self {
             OutboundMsg::Generation(GenerationMessage::Result(p)) => p,
             _ => panic!("msg was not GenerationMessage::Result, it was {self:?}"),
         }
     }
 
-    pub(crate) fn unwrap_err(self) -> AudioGenerationError {
+    pub(crate) fn error(self) -> AudioGenerationError {
         match self {
             OutboundMsg::Generation(GenerationMessage::Error(p)) => p,
             _ => panic!("msg was not GenerationMessage::Error, it was {self:?}"),
+        }
+    }
+
+    pub(crate) fn chat(self) -> (Chat, Vec<ChatEntry>) {
+        match self {
+            OutboundMsg::Chat(p) => p,
+            _ => panic!("msg was not GenerationMessage::Chat, it was {self:?}"),
         }
     }
 }

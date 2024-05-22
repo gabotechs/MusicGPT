@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use specta::Type;
-use tracing::info;
+use tracing::{error, info};
 use uuid::Uuid;
 
 use crate::backend::audio_generation_backend::{AudioGenerationRequest, BackendInboundMsg};
@@ -151,7 +151,11 @@ impl<S: Storage + 'static> WsHandler for MusicGptWsHandler<S> {
             Ok::<Option<OutboundMsg>, anyhow::Error>(res)
         }
         .await
-        .unwrap_or_else(|err| Some(OutboundMsg::Error(err.to_string())))
+        .unwrap_or_else(|err| {
+            let error = err.to_string();
+            error!(error, "Error handling inbound message");
+            Some(OutboundMsg::Error(error))
+        })
     }
 
     fn handle_subscription(&self) -> impl StreamExt<Item = OutboundMsg> + Send + 'static {
