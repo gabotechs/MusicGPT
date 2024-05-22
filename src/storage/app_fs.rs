@@ -54,9 +54,9 @@ impl Storage for AppFs {
             Ok(v) => v,
             Err(err) => {
                 if err.kind() == std::io::ErrorKind::NotFound {
-                    return Ok(vec![])
+                    return Ok(vec![]);
                 }
-                return Err(err)
+                return Err(err);
             }
         };
         while let Some(entry) = dir.next_entry().await? {
@@ -65,8 +65,9 @@ impl Storage for AppFs {
                 continue;
             };
             files.push(
-                rel.iter()
-                    .map(|e| e.to_string_lossy())
+                rel.to_path_buf()
+                    .iter()
+                    .map(|e| e.to_str().unwrap_or_default())
                     .collect::<Vec<_>>()
                     .join("/"),
             );
