@@ -64,7 +64,12 @@ impl Storage for AppFs {
             let Ok(rel) = entry_path.strip_prefix(&self.root) else {
                 continue;
             };
-            files.push(rel.display().to_string())
+            files.push(
+                rel.iter()
+                    .map(|e| e.to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/"),
+            );
         }
         // TODO: doesn't the OS apis already return this sorted?
         files.sort();
