@@ -1,6 +1,5 @@
 use crate::storage::Storage;
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -55,7 +54,11 @@ impl ChatEntry {
             ChatEntry::User(v) => (v.chat_id, v.id, 0),
             ChatEntry::Ai(v) => (v.chat_id, v.id, 1),
         };
-        let now: DateTime<Utc> = SystemTime::now().into();
+        let time_format = time::format_description::parse(
+            "[year]-[month]-[day] [hour]_[minute]_[second]_[subsecond digits:6]",
+        )?;
+        let now = time::OffsetDateTime::now_utc().format(&time_format)?;
+
         let path = format!("chats/{chat_id}/{now}_{id}_{is_ai}.json");
         Ok(storage.write(&path, serde_json::to_vec(self)?).await?)
     }
