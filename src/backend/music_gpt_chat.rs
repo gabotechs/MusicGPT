@@ -229,17 +229,17 @@ mod tests {
         let storage = AppFs::new_tmp();
         let chat_id = Uuid::new_v4();
 
-        let msg1 = ChatEntry::new_user(chat_id, Uuid::new_v4(), "u1".to_string());
+        let msg1 = ChatEntry::new_user(chat_id, Uuid::new_v4(), "user_1".to_string());
         msg1.save(&storage).await?;
-        let msg2 = ChatEntry::new_ai_success(chat_id, Uuid::new_v4(), "a1".to_string());
+        let msg2 = ChatEntry::new_ai_success(chat_id, Uuid::new_v4(), "ai_1".to_string());
         msg2.save(&storage).await?;
         let msg3 = ChatEntry::new_ai_success(Uuid::new_v4(), Uuid::new_v4(), "BAD".to_string());
         msg3.save(&storage).await?;
-        let msg4 = ChatEntry::new_user(chat_id, Uuid::new_v4(), "u2".to_string());
+        let msg4 = ChatEntry::new_user(chat_id, Uuid::new_v4(), "user_2".to_string());
         msg4.save(&storage).await?;
         let msg5 = ChatEntry::new_user(Uuid::new_v4(), Uuid::new_v4(), "BAD".to_string());
         msg5.save(&storage).await?;
-        let msg6 = ChatEntry::new_ai_err(chat_id, Uuid::new_v4(), "a2".to_string());
+        let msg6 = ChatEntry::new_ai_err(chat_id, Uuid::new_v4(), "ai_2".to_string());
         msg6.save(&storage).await?;
 
         let history = Chat::load_entries(&storage, chat_id).await?;
@@ -253,9 +253,9 @@ mod tests {
         let storage = AppFs::new_tmp();
         let chat_id = Uuid::new_v4();
 
-        let msg1 = ChatEntry::new_user(chat_id, Uuid::new_v4(), "u1".to_string());
+        let msg1 = ChatEntry::new_user(chat_id, Uuid::new_v4(), "user_1".to_string());
         msg1.save(&storage).await?;
-        let msg2 = ChatEntry::new_ai_success(chat_id, Uuid::new_v4(), "a1".to_string());
+        let msg2 = ChatEntry::new_ai_success(chat_id, Uuid::new_v4(), "ai_1".to_string());
         msg2.save(&storage).await?;
 
         let history = Chat::load_entries(&storage, chat_id).await?;
