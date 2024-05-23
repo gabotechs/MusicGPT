@@ -16,7 +16,7 @@ https://github.com/gabotechs/MusicGPT/assets/45515538/f0276e7c-70e5-42fc-817a-4d
 
 # Overview
 
-MusicGPT is an application that allows you to run the latest music generation
+MusicGPT is an application that allows running the latest music generation
 AI models locally in a performant way, in any platform and without installing heavy dependencies
 like Python or machine learning frameworks.
 
