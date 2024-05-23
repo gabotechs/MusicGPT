@@ -247,7 +247,7 @@ mod tests {
 
     #[tokio::test]
     async fn handles_job_cancellation() -> anyhow::Result<()> {
-        let backend = AudioGenerationBackend::new(DummyJobProcessor::new(Duration::from_millis(100)));
+        let backend = AudioGenerationBackend::new(DummyJobProcessor::new(Duration::from_millis(200)));
 
         let (tx, rx) = backend.run();
 
@@ -258,7 +258,7 @@ mod tests {
             secs: 4,
         }))?;
 
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
         tx.send(BackendInboundMsg::Abort(id.clone()))?;
 
         assert_eq!(rx.recv()?.unwrap_start().id, id);

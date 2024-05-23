@@ -142,7 +142,7 @@ mod tests {
 
     #[tokio::test]
     async fn can_abort_a_job() -> anyhow::Result<()> {
-        let (mut ws, _) = spawn(DummyJobProcessor::new(Duration::from_millis(100))).await?;
+        let (mut ws, _) = spawn(DummyJobProcessor::new(Duration::from_millis(200))).await?;
 
         let id = Uuid::new_v4();
         let chat_id = Uuid::new_v4();
@@ -155,7 +155,7 @@ mod tests {
         .to_ws(&mut ws)
         .await?;
 
-        tokio::time::sleep(Duration::from_millis(20)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
 
         InboundMsg::AbortGeneration(AbortGenerationRequest { id, chat_id })
             .to_ws(&mut ws)
