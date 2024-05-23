@@ -7,6 +7,10 @@
     Generate music based on natural language prompts using LLMs running locally.
 </p>
 
+
+https://github.com/gabotechs/MusicGPT/assets/45515538/f0276e7c-70e5-42fc-817a-4d9ee9095b4c
+
+
 # Overview
 
 MusicGPT is an application that allows you to run the latest music generation
