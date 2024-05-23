@@ -54,9 +54,9 @@ impl Storage for AppFs {
             Ok(v) => v,
             Err(err) => {
                 if err.kind() == std::io::ErrorKind::NotFound {
-                    return Ok(vec![])
+                    return Ok(vec![]);
                 }
-                return Err(err)
+                return Err(err);
             }
         };
         while let Some(entry) = dir.next_entry().await? {
@@ -64,7 +64,13 @@ impl Storage for AppFs {
             let Ok(rel) = entry_path.strip_prefix(&self.root) else {
                 continue;
             };
-            files.push(rel.display().to_string())
+            files.push(
+                rel.to_path_buf()
+                    .iter()
+                    .map(|e| e.to_str().unwrap_or_default())
+                    .collect::<Vec<_>>()
+                    .join("/"),
+            );
         }
         // TODO: doesn't the OS apis already return this sorted?
         files.sort();

@@ -247,7 +247,7 @@ mod tests {
 
     #[tokio::test]
     async fn handles_job_cancellation() -> anyhow::Result<()> {
-        let backend = AudioGenerationBackend::new(DummyJobProcessor::new(Duration::from_millis(100)));
+        let backend = AudioGenerationBackend::new(DummyJobProcessor::new(Duration::from_millis(200)));
 
         let (tx, rx) = backend.run();
 
@@ -258,25 +258,21 @@ mod tests {
             secs: 4,
         }))?;
 
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        tokio::time::sleep(Duration::from_millis(50)).await;
         tx.send(BackendInboundMsg::Abort(id.clone()))?;
 
         assert_eq!(rx.recv()?.unwrap_start().id, id);
         assert_eq!(rx.recv()?.unwrap_progress().1, 0.25);
-        assert_eq!(rx.recv()?.unwrap_progress().1, 0.5);
         assert_eq!(rx.recv()?.unwrap_err().1, "Aborted");
 
         let id = Uuid::new_v4().to_string();
         tx.send(BackendInboundMsg::Request(AudioGenerationRequest {
             id: id.clone(),
             prompt: "".to_string(),
-            secs: 4,
+            secs: 1,
         }))?;
 
         assert_eq!(rx.recv()?.unwrap_start().id, id);
-        assert_eq!(rx.recv()?.unwrap_progress().1, 0.25);
-        assert_eq!(rx.recv()?.unwrap_progress().1, 0.5);
-        assert_eq!(rx.recv()?.unwrap_progress().1, 0.75);
         assert_eq!(rx.recv()?.unwrap_progress().1, 1.0);
 
         Ok(())

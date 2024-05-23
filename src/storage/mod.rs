@@ -67,22 +67,22 @@ mod tests {
         assert_eq!(list, vec!["list/0.txt", "list/1.txt", "list/2.txt"]);
         let list = s.list("list").await?;
         assert_eq!(list, vec!["list/0.txt", "list/1.txt", "list/2.txt"]);
-        
+
         // listing empty directory returns empty array
         let list = s.list("NON_EXISTING/").await?;
         assert_eq!(list, Vec::<String>::new());
-        
+
         // it should remove a single file
         s.write("to_remove/foo.txt", "foo").await?;
         assert!(s.exists("to_remove/foo.txt").await?);
         let is_removed = s.rm("to_remove/foo.txt").await?;
         assert!(is_removed);
         assert!(!s.exists("to_remove/foo.txt").await?);
-        
+
         // it should allow removing non-existing files without failing
         let is_removed = s.rm("NON_EXISTING/foo.txt").await?;
         assert!(!is_removed);
-        
+
         // it should remove multiple files
         for i in 0..3 {
             let mut file = s.create(&format!("to_remove/{i}.txt")).await?;

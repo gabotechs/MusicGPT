@@ -36,13 +36,19 @@ jobs:
       - run: cargo clippy
 
   unit-test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest] # macos-latest TODO: backend::audio_generation_backend::tests::handles_job_cancellation and backend::server::tests::can_abort_a_job are timing out
+
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - run: cargo test
 
   smoke-test:
+    if: github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:

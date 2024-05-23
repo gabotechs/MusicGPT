@@ -1,6 +1,5 @@
 use crate::storage::Storage;
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -55,7 +54,11 @@ impl ChatEntry {
             ChatEntry::User(v) => (v.chat_id, v.id, 0),
             ChatEntry::Ai(v) => (v.chat_id, v.id, 1),
         };
-        let now: DateTime<Utc> = SystemTime::now().into();
+        let time_format = time::format_description::parse(
+            "[year]-[month]-[day] [hour]_[minute]_[second]_[subsecond digits:6]",
+        )?;
+        let now = time::OffsetDateTime::now_utc().format(&time_format)?;
+
         let path = format!("chats/{chat_id}/{now}_{id}_{is_ai}.json");
         Ok(storage.write(&path, serde_json::to_vec(self)?).await?)
     }
@@ -229,17 +232,17 @@ mod tests {
         let storage = AppFs::new_tmp();
         let chat_id = Uuid::new_v4();
 
-        let msg1 = ChatEntry::new_user(chat_id, Uuid::new_v4(), "u1".to_string());
+        let msg1 = ChatEntry::new_user(chat_id, Uuid::new_v4(), "user_1".to_string());
         msg1.save(&storage).await?;
-        let msg2 = ChatEntry::new_ai_success(chat_id, Uuid::new_v4(), "a1".to_string());
+        let msg2 = ChatEntry::new_ai_success(chat_id, Uuid::new_v4(), "ai_1".to_string());
         msg2.save(&storage).await?;
         let msg3 = ChatEntry::new_ai_success(Uuid::new_v4(), Uuid::new_v4(), "BAD".to_string());
         msg3.save(&storage).await?;
-        let msg4 = ChatEntry::new_user(chat_id, Uuid::new_v4(), "u2".to_string());
+        let msg4 = ChatEntry::new_user(chat_id, Uuid::new_v4(), "user_2".to_string());
         msg4.save(&storage).await?;
         let msg5 = ChatEntry::new_user(Uuid::new_v4(), Uuid::new_v4(), "BAD".to_string());
         msg5.save(&storage).await?;
-        let msg6 = ChatEntry::new_ai_err(chat_id, Uuid::new_v4(), "a2".to_string());
+        let msg6 = ChatEntry::new_ai_err(chat_id, Uuid::new_v4(), "ai_2".to_string());
         msg6.save(&storage).await?;
 
         let history = Chat::load_entries(&storage, chat_id).await?;
@@ -253,9 +256,9 @@ mod tests {
         let storage = AppFs::new_tmp();
         let chat_id = Uuid::new_v4();
 
-        let msg1 = ChatEntry::new_user(chat_id, Uuid::new_v4(), "u1".to_string());
+        let msg1 = ChatEntry::new_user(chat_id, Uuid::new_v4(), "user_1".to_string());
         msg1.save(&storage).await?;
-        let msg2 = ChatEntry::new_ai_success(chat_id, Uuid::new_v4(), "a1".to_string());
+        let msg2 = ChatEntry::new_ai_success(chat_id, Uuid::new_v4(), "ai_1".to_string());
         msg2.save(&storage).await?;
 
         let history = Chat::load_entries(&storage, chat_id).await?;
