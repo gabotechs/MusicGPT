@@ -9,6 +9,9 @@
 
 
 https://github.com/gabotechs/MusicGPT/assets/45515538/f0276e7c-70e5-42fc-817a-4d9ee9095b4c
+<p align="end">
+☝️ Turn up the volume!
+</p>
 
 
 # Overview
