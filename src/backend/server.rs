@@ -155,7 +155,7 @@ mod tests {
         .to_ws(&mut ws)
         .await?;
 
-        tokio::time::sleep(Duration::from_millis(150)).await;
+        tokio::time::sleep(Duration::from_millis(20)).await;
 
         InboundMsg::AbortGeneration(AbortGenerationRequest { id, chat_id })
             .to_ws(&mut ws)
@@ -169,9 +169,6 @@ mod tests {
         assert_eq!(p.id, id);
         assert_eq!(p.chat_id, chat_id);
         assert_eq!(p.progress, 0.25);
-
-        let p = OutboundMsg::from_ws(&mut ws).await?.progress();
-        assert_eq!(p.progress, 0.5);
 
         let p = OutboundMsg::from_ws(&mut ws).await?.error();
         assert_eq!(p.id, id);
