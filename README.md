@@ -100,7 +100,7 @@ musicgpt --gpu --model medium
 If you want to use a CUDA enabled GPU, it's recommended that you run MusicGPT with Docker:
 
 ```shell
-docker run -it --gpus all -p 8642:8642 -v ~/.musicgpt:/root/.local/share/musicgpt gabotechs/musicgpt --gpu
+docker run -it --gpus all -p 8642:8642 -v ~/.musicgpt:/root/.local/share/musicgpt gabotechs/musicgpt --ui-expose --gpu
 ```
 
 ## CLI mode
@@ -132,7 +132,7 @@ musicgpt "Create a relaxing LoFi song" --model medium
 If you want to use a CUDA enabled GPU, it's recommended that you run MusicGPT with Docker:
 
 ```shell
-docker run -it --gpus all -v ~/.musicgpt:/root/.local/share/musicgpt gabotechs/musicgpt --gpu --ui-expose "Create a relaxing LoFi song"
+docker run -it --gpus all -v ~/.musicgpt:/root/.local/share/musicgpt gabotechs/musicgpt --gpu "Create a relaxing LoFi song"
 ```
 
 You can review all the options available running:
