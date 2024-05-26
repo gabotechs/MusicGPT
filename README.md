@@ -49,7 +49,7 @@ from [this link](https://github.com/gabotechs/MusicGPT/releases/latest/download/
 ### Docker (Recommend for running with CUDA)
 
 If you want to run MusicGPT with a CUDA enabled GPU, this is the best way, as you only need to have [the basic
-NVIDIA drivers installed in your system](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+NVIDIA drivers](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html) installed in your system.
 
 ```shell
 docker pull gabotechs/musicgpt
