@@ -158,10 +158,6 @@ musicgpt '80s pop track with bassy drums and synth'
 <summary>This is the Python script used for generating the 10 seconds of audio</summary>
 
 ```python
-# Your Python code here
-def example_function():
-    print("Hello, World!")
-```python
 import scipy
 import time
 from transformers import AutoProcessor, MusicgenForConditionalGeneration
@@ -184,6 +180,11 @@ scipy.io.wavfile.write("musicgen_out.wav", rate=sampling_rate, data=audio_values
 ```
 
 </details>
+
+<p align="center">
+<img height=400 src="https://github.com/gabotechs/MusicGPT/assets/45515538/edae3c25-04e3-41c3-a2b5-c0829fa69ee3"/>
+</p>
+
 
 # License
 
