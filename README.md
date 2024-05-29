@@ -141,6 +141,50 @@ You can review all the options available running:
 musicgpt --help
 ```
 
+# Benchmarks
+
+The following graph shows the inference time taken for generating 10 seconds of audio using
+different models on a Mac M1 Pro. For comparison, it's Python equivalent using https://github.com/huggingface/transformers
+is shown. 
+
+The command used for generating the 10 seconds of audio was:
+
+ 
+```shell
+musicgpt '80s pop track with bassy drums and synth'
+```
+
+<details>
+<summary>This is the Python script used for generating the 10 seconds of audio</summary>
+
+```python
+# Your Python code here
+def example_function():
+    print("Hello, World!")
+```python
+import scipy
+import time
+from transformers import AutoProcessor, MusicgenForConditionalGeneration
+
+processor = AutoProcessor.from_pretrained("facebook/musicgen-small")
+model = MusicgenForConditionalGeneration.from_pretrained("facebook/musicgen-small")
+
+inputs = processor(
+    text=["80s pop track with bassy drums and synth"],
+    padding=True,
+    return_tensors="pt",
+)
+
+start = time.time()
+audio_values = model.generate(**inputs, max_new_tokens=500)
+print(time.time() - start) # Log time taken in generation
+
+sampling_rate = model.config.audio_encoder.sampling_rate
+scipy.io.wavfile.write("musicgen_out.wav", rate=sampling_rate, data=audio_values[0, 0].numpy())
+```
+
+</details>
+
 # License
 
 The code is licensed under a [MIT License](./LICENSE), but the AI model weights that get downloaded
