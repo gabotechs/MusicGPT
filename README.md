@@ -191,9 +191,9 @@ MusicGPT needs access to your storage in order to save downloaded models and gen
 metadata needed for the application to work properly. Assuming your username is `foo`, it will store the data
 in the following locations:
 
-Windows: `C:\Users\foo\AppData\Roaming\gabotechs\musicgpt`
-MacOS: `/Users/foo/Library/Application\ Support/com.gabotechs.musicgpt`
-Linux: `/home/foo/.config/musicgpt`
+- Windows: `C:\Users\foo\AppData\Roaming\gabotechs\musicgpt`
+- MacOS: `/Users/foo/Library/Application\ Support/com.gabotechs.musicgpt`
+- Linux: `/home/foo/.config/musicgpt`
 
 # License
 
