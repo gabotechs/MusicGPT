@@ -185,6 +185,15 @@ scipy.io.wavfile.write("musicgen_out.wav", rate=sampling_rate, data=audio_values
 <img height=400 src="https://github.com/gabotechs/MusicGPT/assets/45515538/edae3c25-04e3-41c3-a2b5-c0829fa69ee3"/>
 </p>
 
+# Storage
+
+MusicGPT needs access to your storage in order to save downloaded models and generated audios along with some
+metadata needed for the application to work properly. Assuming your username is `foo`, it will store the data
+in the following locations:
+
+Windows: `C:\Users\foo\AppData\Roaming\gabotechs\musicgpt`
+MacOS: `/Users/foo/Library/Application\ Support/com.gabotechs.musicgpt`
+Linux: `/home/foo/.config/musicgpt`
 
 # License
 
