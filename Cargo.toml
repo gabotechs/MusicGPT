@@ -18,7 +18,7 @@ ndarray = "0.16.1"
 num-traits = "0.2.18"
 log = "0.4.21"
 rand = "0.8.5"
-hound = "3.5.1"
+hound = { git = "https://github.com/rubeniskov/hound.git", branch = "fix-channel-mask-mono-speaker" }
 tokio = { version = "1.37.0", features = ["full"] }
 indicatif = "0.17.8"
 directories = "5.0"

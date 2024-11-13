@@ -1097,9 +1097,8 @@ dependencies = [
 
 [[package]]
 name = "hound"
-version = "3.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
+version = "3.4.0"
+source = "git+https://github.com/rubeniskov/hound.git?branch=fix-channel-mask-mono-speaker#5153cbf0c31b1b6a47b45e9171ab1bfd42faae60"
 
 [[package]]
 name = "http"
