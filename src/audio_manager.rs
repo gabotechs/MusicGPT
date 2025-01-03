@@ -29,6 +29,7 @@ impl Default for AudioManager {
     }
 }
 
+#[allow(dead_code)]
 pub struct AudioStream {
     pub stream: Stream,
     pub duration: Duration,

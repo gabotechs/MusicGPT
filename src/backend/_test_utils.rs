@@ -127,13 +127,13 @@ impl JobProcessor for DummyJobProcessor {
         let mut result = VecDeque::new();
         for i in 0..secs {
             if prompt == format!("fail at {i}") {
-                return Err(ort::Error::CustomError(format!("Failed at {i}").into()));
+                return Err(ort::Error::new(format!("Failed at {i}")));
             }
             std::thread::sleep(self.wait_scale);
             result.push_back(i as f32);
             let should_exit = on_progress(result.len() as f32 / secs as f32);
             if should_exit {
-                return Err(ort::Error::CustomError("Aborted".into()));
+                return Err(ort::Error::new("Aborted"));
             }
         }
 

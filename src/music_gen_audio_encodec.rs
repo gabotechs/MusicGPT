@@ -2,9 +2,11 @@ use std::collections::VecDeque;
 
 use half::f16;
 use ndarray::{Array, Axis};
+use ort::session::Session;
+use ort::value::DynValue;
 
 pub struct MusicGenAudioEncodec {
-    pub audio_encodec_decode: ort::Session,
+    pub audio_encodec_decode: Session,
 }
 
 impl MusicGenAudioEncodec {
@@ -20,7 +22,7 @@ impl MusicGenAudioEncodec {
         let arr = Array::from_shape_vec((seq_len, 4), data).expect("Programming error");
         let arr = arr.t().insert_axis(Axis(0)).insert_axis(Axis(0));
         let mut outputs = self.audio_encodec_decode.run(ort::inputs![arr]?)?;
-        let audio_values: ort::DynValue = outputs
+        let audio_values: DynValue = outputs
             .remove("audio_values")
             .expect("audio_values not found in output");
 
@@ -31,8 +33,8 @@ impl MusicGenAudioEncodec {
             return Ok(data.into_iter().map(|e| f32::from(*e)).collect());
         }
 
-        return Err(ort::Error::CustomError(
-            "Token stream must be either f16 or f32".into(),
-        ));
+        Err(ort::error::Error::new(
+            "Token stream must be either f16 or f32",
+        ))
     }
 }
