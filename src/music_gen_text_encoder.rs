@@ -1,14 +1,16 @@
+use ort::session::Session;
+use ort::value::{DynValue, Tensor};
 use tokenizers::Tokenizer;
 
 use crate::tensor_ops::ones_tensor;
 
 pub struct MusicGenTextEncoder {
     pub tokenizer: Tokenizer,
-    pub text_encoder: ort::Session,
+    pub text_encoder: Session,
 }
 
 impl MusicGenTextEncoder {
-    pub fn encode(&self, text: &str) -> ort::Result<(ort::DynValue, ort::DynValue)> {
+    pub fn encode(&self, text: &str) -> ort::Result<(DynValue, DynValue)> {
         let tokens = self
             .tokenizer
             .encode(text, true)
@@ -19,7 +21,7 @@ impl MusicGenTextEncoder {
             .collect::<Vec<_>>();
 
         let tokens_len = tokens.len();
-        let input_ids = ort::Tensor::from_array(([1, tokens_len], tokens))?;
+        let input_ids = Tensor::from_array(([1, tokens_len], tokens))?;
         let attention_mask = ones_tensor::<i64>(&[1, tokens_len]);
 
         let mut output = self
@@ -30,7 +32,9 @@ impl MusicGenTextEncoder {
             .remove("last_hidden_state")
             .expect("last_hidden_state not found in output");
 
-        Ok((last_hidden_state, ones_tensor::<i64>(&[1, tokens_len]).into_dyn()))
+        Ok((
+            last_hidden_state,
+            ones_tensor::<i64>(&[1, tokens_len]).into_dyn(),
+        ))
     }
 }
-

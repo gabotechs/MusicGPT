@@ -91,7 +91,7 @@ impl JobProcessor for MusicGenJobProcessor {
             data.push_back(tokens?);
             let should_exit = on_progress(data.len() as f32 / max_len as f32);
             if should_exit {
-                return Err(ort::Error::CustomError("Aborted".into()));
+                return Err(ort::Error::new("Aborted"));
             }
         }
 

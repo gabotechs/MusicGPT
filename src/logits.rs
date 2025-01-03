@@ -4,24 +4,25 @@ use std::ops::{Deref, DerefMut};
 
 use ndarray::{s, Array, Array2, Axis, Ix2, Ix3, IxDyn};
 use num_traits::FloatConst;
-use ort::ArrayExtensions;
+use ort::tensor::ArrayExtensions;
+use ort::value::{DynValue};
 use rand::distributions::WeightedIndex;
 use rand::{thread_rng, Rng};
 
 pub struct Logits(Array2<f32>);
 
-impl TryFrom<ort::DynValue> for Logits {
+impl TryFrom<DynValue> for Logits {
     type Error = ort::Error;
 
-    fn try_from(value: ort::DynValue) -> Result<Self, Self::Error> {
+    fn try_from(value: DynValue) -> Result<Self, Self::Error> {
         (&value).try_into()
     }
 }
 
-impl TryFrom<&ort::DynValue> for Logits {
+impl TryFrom<&DynValue> for Logits {
     type Error = ort::Error;
 
-    fn try_from(value: &ort::DynValue) -> Result<Self, Self::Error> {
+    fn try_from(value: &DynValue) -> Result<Self, Self::Error> {
         let arr = value.try_extract_tensor::<f32>()?.into_owned();
         let arr = arr.into_dimensionality::<Ix2>().expect("Expected dim 2");
         Ok(Self(arr))
@@ -56,7 +57,7 @@ impl Debug for Logits {
 }
 
 impl Logits {
-    pub fn from_3d_dyn_value(value: &ort::DynValue) -> ort::Result<Self> {
+    pub fn from_3d_dyn_value(value: &DynValue) -> ort::Result<Self> {
         let arr = if let Ok(res) = value.try_extract_tensor::<f32>() {
             res.into_owned()
         } else {

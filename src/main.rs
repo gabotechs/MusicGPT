@@ -11,9 +11,11 @@ use directories::ProjectDirs;
 use half::f16;
 use lazy_static::lazy_static;
 use log::{error, info};
-use ort::{
-    CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider, TensorRTExecutionProvider,
+use ort::execution_providers::{
+    CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProviderDispatch,
+    TensorRTExecutionProvider,
 };
+use ort::session::Session;
 use regex::Regex;
 use text_io::read;
 use tokenizers::Tokenizer;
@@ -145,7 +147,6 @@ lazy_static! {
     static ref PROJECT_DIRS: ProjectDirs = ProjectDirs::from("com", "gabotechs", "musicgpt")
         .expect("Could not load project directory");
 }
-
 
 async fn _main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -302,15 +303,10 @@ fn init_gpu() -> anyhow::Result<String> {
         dev = "CoreML"
     }
 
-    let dummy_builder = ort::Session::builder()?;
-    let mut providers = vec![];
+    let mut providers: Vec<ExecutionProviderDispatch> = vec![];
     for provider in candidates {
-        if let Err(err) = provider.register(&dummy_builder) {
-            error!("Could not load {}: {}", provider.as_str(), err);
-        } else {
-            info!("{} detected", provider.as_str());
-            providers.push(provider)
-        }
+        info!("{:?} detected", provider);
+        providers.push(provider)
     }
 
     if providers.is_empty() {
@@ -570,7 +566,7 @@ async fn download(
 
 async fn build_sessions(
     files: impl IntoIterator<Item = PathBuf>,
-) -> anyhow::Result<VecDeque<ort::Session>> {
+) -> anyhow::Result<VecDeque<Session>> {
     let mut results = VecDeque::new();
     for file in files {
         if file.extension() != Some("onnx".as_ref()) {
@@ -580,7 +576,7 @@ async fn build_sessions(
             format!("Loading {:?}...", file.file_name().unwrap_or_default()).as_str(),
         );
 
-        let result = ort::Session::builder()?.commit_from_file(file)?;
+        let result = Session::builder()?.commit_from_file(file)?;
         bar.finish_and_clear();
         results.push_back(result);
     }

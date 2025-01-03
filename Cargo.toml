@@ -13,7 +13,7 @@ authors = ["gb.mt.me@gmail.com"]
 openssl = { version = "0.10.59", features = ["vendored"] } # NOTE: neeeded for cross compilations
 clap = { version = "4.5.4", features = ["derive"] }
 tokenizers = "0.19.1"
-ndarray = "0.15.6"
+ndarray = "0.16.1"
 num-traits = "0.2.18"
 log = "0.4.21"
 rand = "0.8.5"
@@ -26,7 +26,7 @@ futures-util = "0.3.30"
 serde = { version = "1.0.200" }
 serde_json = "1.0.116"
 cpal = "0.15.3"
-ort = { version = "2.0.0-rc.2", features = ["half"] }
+ort = { version = "2.0.0-rc.9", features = ["half"] }
 half = { version = "2.4.1", features = ["num-traits"] }
 lazy_static = "1.4.0"
 tracing = "0.1.40"

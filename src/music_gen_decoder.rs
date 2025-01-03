@@ -3,15 +3,17 @@ use std::marker::PhantomData;
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 
-use num_traits::Zero;
-
 use crate::delay_pattern_mask_ids::DelayedPatternMaskIds;
 use crate::music_gen_config::MusicGenConfig;
 use crate::music_gen_inputs::MusicGenInputs;
 use crate::music_gen_outputs::MusicGenOutputs;
 use crate::tensor_ops::{dupe_zeros_along_first_dim, zeros_tensor};
+use num_traits::Zero;
+use ort::session::Session;
+use ort::tensor::PrimitiveTensorElementType;
+use ort::value::{DynValue, Tensor};
 
-pub trait MusicGenType: ort::IntoTensorElementType + Debug + Clone + Zero {}
+pub trait MusicGenType: PrimitiveTensorElementType + Debug + Clone + Zero {}
 
 impl MusicGenType for u8 {}
 impl MusicGenType for i8 {}
@@ -24,14 +26,14 @@ const GUIDANCE_SCALE: usize = 3;
 pub trait MusicGenDecoder: Send + Sync {
     fn generate_tokens(
         &self,
-        last_hidden_state: ort::DynValue,
-        encoder_attention_mask: ort::DynValue,
+        last_hidden_state: DynValue,
+        encoder_attention_mask: DynValue,
         max_len: usize,
     ) -> ort::Result<Receiver<ort::Result<[i64; 4]>>>;
 }
 
 pub struct MusicGenMergedDecoder<T: MusicGenType> {
-    pub decoder_model_merged: Arc<ort::Session>,
+    pub decoder_model_merged: Arc<Session>,
     pub config: MusicGenConfig,
     pub _phantom_data: PhantomData<T>,
 }
@@ -42,8 +44,8 @@ unsafe impl<T: MusicGenType> Sync for MusicGenMergedDecoder<T> {}
 impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenMergedDecoder<T> {
     fn generate_tokens(
         &self,
-        last_hidden_state: ort::DynValue,
-        encoder_attention_mask: ort::DynValue,
+        last_hidden_state: DynValue,
+        encoder_attention_mask: DynValue,
         max_len: usize,
     ) -> ort::Result<Receiver<ort::Result<[i64; 4]>>> {
         // Apparently, there's a setting in huggingface's transformers that says that
@@ -74,7 +76,7 @@ impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenMergedDecoder<T> {
 
         std::thread::spawn(move || {
             let result = {
-                inputs.input_ids(ort::Tensor::from_array(([8, 1], vec![pad_token_id; 8]))?)?;
+                inputs.input_ids(Tensor::from_array(([8, 1], vec![pad_token_id; 8]))?)?;
 
                 for i in 0..num_hidden_layers {
                     inputs.past_key_value_decoder_key(i, zeros_tensor::<T>(&decoder_dims))?;
@@ -97,7 +99,7 @@ impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenMergedDecoder<T> {
                     );
 
                     let [a, b, c, d] = delay_pattern_mask_ids.last_delayed_masked(pad_token_id);
-                    inputs.input_ids(ort::Tensor::from_array((
+                    inputs.input_ids(ort::value::Value::from_array((
                         [8, 1],
                         vec![a, b, c, d, a, b, c, d],
                     ))?)?;
@@ -140,8 +142,8 @@ impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenMergedDecoder<T> {
 }
 
 pub struct MusicGenSplitDecoder<T: MusicGenType> {
-    pub decoder_model: ort::Session,
-    pub decoder_with_past_model: Arc<ort::Session>,
+    pub decoder_model: Session,
+    pub decoder_with_past_model: Arc<Session>,
     pub config: MusicGenConfig,
     pub _phantom_data: PhantomData<T>,
 }
@@ -152,8 +154,8 @@ unsafe impl<T: MusicGenType> Sync for MusicGenSplitDecoder<T> {}
 impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenSplitDecoder<T> {
     fn generate_tokens(
         &self,
-        last_hidden_state: ort::DynValue,
-        encoder_attention_mask: ort::DynValue,
+        last_hidden_state: DynValue,
+        encoder_attention_mask: DynValue,
         max_len: usize,
     ) -> ort::Result<Receiver<ort::Result<[i64; 4]>>> {
         // Apparently, there's a setting in huggingface's transformers that says that
@@ -170,7 +172,7 @@ impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenSplitDecoder<T> {
 
         let mut inputs = MusicGenInputs::new();
         inputs.encoder_attention_mask(encoder_attention_mask)?;
-        inputs.input_ids(ort::Tensor::from_array(([8, 1], vec![pad_token_id; 8]))?)?;
+        inputs.input_ids(Tensor::from_array(([8, 1], vec![pad_token_id; 8]))?)?;
         inputs.encoder_hidden_states(encoder_hidden_states)?;
 
         let outputs = self.decoder_model.run(inputs.ort())?;
@@ -207,10 +209,8 @@ impl<T: MusicGenType + 'static> MusicGenDecoder for MusicGenSplitDecoder<T> {
             let result = {
                 for _ in 0..max_len {
                     let [a, b, c, d] = delay_pattern_mask_ids.last_delayed_masked(pad_token_id);
-                    inputs.input_ids(ort::Tensor::from_array((
-                        [8, 1],
-                        vec![a, b, c, d, a, b, c, d],
-                    ))?)?;
+                    inputs
+                        .input_ids(Tensor::from_array(([8, 1], vec![a, b, c, d, a, b, c, d]))?)?;
                     let outputs = decoder_with_past.run(inputs.ort())?;
                     let mut outputs = MusicGenOutputs::new(outputs);
 
