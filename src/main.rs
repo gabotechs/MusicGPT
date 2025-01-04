@@ -12,7 +12,7 @@ use half::f16;
 use lazy_static::lazy_static;
 use log::{error, info};
 use ort::execution_providers::{
-    CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProviderDispatch,
+    CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider, ExecutionProviderDispatch,
     TensorRTExecutionProvider,
 };
 use ort::session::Session;
@@ -287,26 +287,42 @@ async fn cli_interface(args: &Args) -> anyhow::Result<()> {
 }
 
 fn init_gpu() -> anyhow::Result<String> {
-    let mut candidates = vec![];
+    let mut dummy_builder = Session::builder()?;
+    let mut providers = vec![];
 
     let mut dev = "Cpu";
     if cfg!(feature = "tensorrt") {
-        candidates.push(TensorRTExecutionProvider::default().build());
-        dev = "TensorRT"
+        let provider = TensorRTExecutionProvider::default();
+        match provider.register(&mut dummy_builder) {
+            Ok(_) => {
+                info!("{} detected", provider.as_str());
+                providers.push(provider.build());
+                dev = "TensorRT"
+            }
+            Err(err) => error!("Could not load {}: {}", provider.as_str(), err),
+        }
     }
     if cfg!(feature = "cuda") {
-        candidates.push(CUDAExecutionProvider::default().build());
-        dev = "Cuda"
+        let provider = CUDAExecutionProvider::default();
+        match provider.register(&mut dummy_builder) {
+            Ok(_) => {
+                info!("{} detected", provider.as_str());
+                providers.push(provider.build());
+                dev = "Cuda"
+            }
+            Err(err) => error!("Could not load {}: {}", provider.as_str(), err),
+        }
     }
     if cfg!(feature = "coreml") {
-        candidates.push(CoreMLExecutionProvider::default().with_ane_only().build());
-        dev = "CoreML"
-    }
-
-    let mut providers: Vec<ExecutionProviderDispatch> = vec![];
-    for provider in candidates {
-        info!("{:?} detected", provider);
-        providers.push(provider)
+        let provider = CoreMLExecutionProvider::default().with_ane_only();
+        match provider.register(&mut dummy_builder) {
+            Ok(_) => {
+                info!("{} detected", provider.as_str());
+                providers.push(provider.build());
+                dev = "CoreML"
+            }
+            Err(err) => error!("Could not load {}: {}", provider.as_str(), err),
+        }
     }
 
     if providers.is_empty() {
