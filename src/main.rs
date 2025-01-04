@@ -12,8 +12,7 @@ use half::f16;
 use lazy_static::lazy_static;
 use log::{error, info};
 use ort::execution_providers::{
-    CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider, ExecutionProviderDispatch,
-    TensorRTExecutionProvider,
+    CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider, TensorRTExecutionProvider,
 };
 use ort::session::Session;
 use regex::Regex;
