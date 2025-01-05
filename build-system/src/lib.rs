@@ -18,7 +18,7 @@ const DYN_LIB_EXT: &str = "dll";
 #[cfg(target_os = "linux")]
 const DYN_LIB_EXT: &str = "so";
 
-pub enum Accelarators {
+pub enum Accelerators {
     COREML,
     TENSORRT,
     CUDA,
@@ -71,7 +71,7 @@ impl BuildInfo {
 /// returns: a list of paths with the generated dynamic libs.
 pub fn build(
     out_dir: impl Into<PathBuf>,
-    accelerators: Vec<Accelarators>,
+    accelerators: Vec<Accelerators>,
 ) -> Result<BuildInfo, Box<dyn std::error::Error>> {
     let url = format!(
         "https://github.com/microsoft/onnxruntime/archive/refs/tags/v{ONNX_RELEASE}.tar.gz"
@@ -126,9 +126,9 @@ pub fn build(
 
     for accelerator in accelerators {
         match accelerator {
-            Accelarators::COREML => cmd.arg("--use_coreml"),
-            Accelarators::TENSORRT => cmd.arg("--use_tensorrt"),
-            Accelarators::CUDA => cmd.arg("--use_cuda"),
+            Accelerators::COREML => cmd.arg("--use_coreml"),
+            Accelerators::TENSORRT => cmd.arg("--use_tensorrt"),
+            Accelerators::CUDA => cmd.arg("--use_cuda"),
         };
     }
 
