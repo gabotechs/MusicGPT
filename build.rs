@@ -8,7 +8,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(feature = "onnxruntime-from-source")]
 mod build {
     #[allow(unused_imports)]
-    use build_system::Accelarators;
+    use build_system::Accelerators;
     use std::env;
     use std::path::PathBuf;
 
@@ -21,11 +21,11 @@ mod build {
         #[allow(unused_mut)]
         let mut accelerators = vec![];
         #[cfg(feature = "cuda")]
-        accelerators.push(Accelarators::CUDA);
+        accelerators.push(Accelerators::CUDA);
         #[cfg(feature = "coreml")]
-        accelerators.push(Accelarators::COREML);
+        accelerators.push(Accelerators::COREML);
         #[cfg(feature = "tensorrt")]
-        accelerators.push(Accelarators::TENSORRT);
+        accelerators.push(Accelerators::TENSORRT);
 
         let info = build_system::build(PathBuf::from(manifest_dir).join("target"), accelerators)?;
         info.to_out_dir();
