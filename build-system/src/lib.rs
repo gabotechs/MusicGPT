@@ -143,7 +143,7 @@ pub fn build(
             dynlib_filenames.push(file.clone());
         }
 
-        if file.ends_with(DYN_LIB_EXT) && file.starts_with("libonnxruntime") {
+        if file == format!("libonnxruntime.{DYN_LIB_EXT}") {
             main_dynlib_filename = file.to_string();
         }
     }
