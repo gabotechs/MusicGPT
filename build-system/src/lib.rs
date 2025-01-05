@@ -95,7 +95,11 @@ pub fn build(
     }
 
     #[cfg(target_os = "windows")]
-    let mut cmd = Command::new("build.bat");
+    let mut cmd = Command::new("cmd");
+    #[cfg(target_os = "windows")]
+    {
+        cmd.arg("/C").arg("build.bat");
+    }
     #[cfg(not(target_os = "windows"))]
     let mut cmd = Command::new("./build.sh");
 
