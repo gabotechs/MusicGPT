@@ -1,33 +1,34 @@
 use std::collections::VecDeque;
+use std::env::consts::ARCH;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::audio_manager::{AudioManager, AudioStream};
+use crate::loading_bar_factory::LoadingBarFactor;
+use crate::music_gen_audio_encodec::MusicGenAudioEncodec;
+use crate::music_gen_decoder::{MusicGenDecoder, MusicGenMergedDecoder, MusicGenSplitDecoder};
+use crate::music_gen_text_encoder::MusicGenTextEncoder;
+use crate::storage::{AppFs, Storage};
 use anyhow::anyhow;
+use build_system::BuildInfo;
 use clap::{Parser, ValueEnum};
 use directories::ProjectDirs;
 use half::f16;
 use lazy_static::lazy_static;
 use log::{error, info};
 use ort::execution_providers::{
-    CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider, TensorRTExecutionProvider,
+    CUDAExecutionProvider, CoreMLExecutionProvider, ExecutionProvider, ExecutionProviderDispatch,
+    TensorRTExecutionProvider,
 };
 use ort::session::Session;
 use regex::Regex;
 use text_io::read;
 use tokenizers::Tokenizer;
-use tokio::fs;
 use tracing::warn;
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::{fmt, EnvFilter};
-
-use crate::loading_bar_factory::LoadingBarFactor;
-use crate::music_gen_audio_encodec::MusicGenAudioEncodec;
-use crate::music_gen_decoder::{MusicGenDecoder, MusicGenMergedDecoder, MusicGenSplitDecoder};
-use crate::music_gen_text_encoder::MusicGenTextEncoder;
-use crate::storage::{AppFs, Storage};
 
 mod audio_manager;
 mod backend;
@@ -43,6 +44,8 @@ mod music_gen_outputs;
 mod music_gen_text_encoder;
 mod storage;
 mod tensor_ops;
+
+include!(concat!(env!("OUT_DIR"), "/built.rs"));
 
 #[derive(Clone, Copy, ValueEnum)]
 enum Model {
@@ -143,29 +146,38 @@ impl Args {
 }
 
 lazy_static! {
-    static ref PROJECT_DIRS: ProjectDirs = ProjectDirs::from("com", "gabotechs", "musicgpt")
-        .expect("Could not load project directory");
+    static ref PROJECT_FS: AppFs = AppFs::new(
+        ProjectDirs::from("com", "gabotechs", "musicgpt")
+            .expect("Could not load project directory")
+            .data_dir()
+    );
 }
 
 async fn _main() -> anyhow::Result<()> {
     let args = Args::parse();
     args.validate()?;
 
-    let mut device = "Cpu".to_string();
+    #[cfg(feature = "onnxruntime-from-source")]
+    let mut ort_builder = ort::init_from(lookup_dyn_onnxruntime_lib().await?);
+    #[cfg(not(feature = "onnxruntime-from-source"))]
+    let mut ort_builder = ort::init();
+
+    let mut device = "Cpu";
     if args.gpu {
         warn!("GPU support is experimental, it might not work on most platforms");
-        device = init_gpu()?;
+        let (gpu_device, provider) = init_gpu()?;
+        device = gpu_device;
+        ort_builder = ort_builder.with_execution_providers(&[provider]);
     }
-
-    let storage = AppFs::new(PROJECT_DIRS.data_dir());
+    ort_builder.commit()?;
 
     if args.prompt.is_empty() {
         let (text_encoder, decoder, audio_encodec) = build_music_gen_parts(&args).await?;
         backend::run(
-            storage,
+            PROJECT_FS.clone(),
             backend::MusicGenJobProcessor {
                 name: args.model.to_string(),
-                device,
+                device: device.to_string(),
                 text_encoder,
                 decoder,
                 audio_encodec,
@@ -285,18 +297,59 @@ async fn cli_interface(args: &Args) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn init_gpu() -> anyhow::Result<String> {
-    let mut dummy_builder = Session::builder()?;
-    let mut providers = vec![];
+#[cfg(feature = "onnxruntime-from-source")]
+async fn lookup_dyn_onnxruntime_lib() -> anyhow::Result<String> {
+    // Build info dumped by the build-system crate at compile time.
+    let BuildInfo {
+        local_dynlib_filepaths,
+        main_dynlib_filename,
+        dynlib_filenames,
+        version,
+    } = BuildInfo::from_out_dir(env!("OUT_DIR"));
 
-    let mut dev = "Cpu";
+    // If running with Cargo, build.rs have set this ONNXRUNTIME_LOCAL_FILES env to the
+    // path of the generated dynamic library files compiled from source.
+    // If not running with cargo, this will not be set.
+    for local_filepath in local_dynlib_filepaths {
+        if local_filepath.ends_with(&main_dynlib_filename)
+            && tokio::fs::try_exists(&local_filepath)
+                .await
+                .unwrap_or(false)
+        {
+            let local_filepath = local_filepath.to_str().expect("local filepath is not UTF8");
+            return Ok(local_filepath.to_string());
+        }
+    }
+
+    // If there's no local file, attempt to download it from a GitHub release.
+    let remote_file_spec = dynlib_filenames
+        .iter()
+        .map(|v| {
+            (
+                format!("{PKG_REPOSITORY}/releases/download/v{PKG_VERSION}/{TARGET}-{v}"),
+                format!("dynlibs/{version}/{v}"),
+            )
+        })
+        .collect::<Vec<_>>();
+    download(
+        remote_file_spec,
+        false,
+        &format!("Dynamic libraries not found in path set by ONNXRUNTIME_LOCAL_FILES env variable. Downloading them from GitHub release {PKG_VERSION}..."),
+        "Dynamic libraries downloaded",
+    )
+    .await?;
+    Ok(format!("dynlibs/{version}/{main_dynlib_filename}"))
+}
+
+fn init_gpu() -> anyhow::Result<(&'static str, ExecutionProviderDispatch)> {
+    let mut dummy_builder = Session::builder()?;
+
     if cfg!(feature = "tensorrt") {
         let provider = TensorRTExecutionProvider::default();
         match provider.register(&mut dummy_builder) {
             Ok(_) => {
                 info!("{} detected", provider.as_str());
-                providers.push(provider.build());
-                dev = "TensorRT"
+                return Ok(("TensorRT", provider.build()));
             }
             Err(err) => error!("Could not load {}: {}", provider.as_str(), err),
         }
@@ -306,8 +359,7 @@ fn init_gpu() -> anyhow::Result<String> {
         match provider.register(&mut dummy_builder) {
             Ok(_) => {
                 info!("{} detected", provider.as_str());
-                providers.push(provider.build());
-                dev = "Cuda"
+                return Ok(("Cuda", provider.build()));
             }
             Err(err) => error!("Could not load {}: {}", provider.as_str(), err),
         }
@@ -317,21 +369,15 @@ fn init_gpu() -> anyhow::Result<String> {
         match provider.register(&mut dummy_builder) {
             Ok(_) => {
                 info!("{} detected", provider.as_str());
-                providers.push(provider.build());
-                dev = "CoreML"
+                return Ok(("CoreML", provider.build()));
             }
             Err(err) => error!("Could not load {}: {}", provider.as_str(), err),
         }
     }
 
-    if providers.is_empty() {
-        return Err(anyhow!(
-            "No hardware accelerator was detected, try running the program without the --gpu flag",
-        ));
-    }
-
-    ort::init().with_execution_providers(providers).commit()?;
-    Ok(dev.to_string())
+    Err(anyhow!(
+        "No hardware accelerator was detected, try running the program without the --gpu flag",
+    ))
 }
 
 async fn build_music_gen_parts(
@@ -472,7 +518,13 @@ async fn build_music_gen_parts(
         ],
     };
 
-    let mut results = download(remote_file_spec, args.force_download).await?;
+    let mut results = download(
+        remote_file_spec,
+        args.force_download,
+        "Some AI models need to be downloaded, this only needs to be done once",
+        "AI models downloaded correctly",
+    )
+    .await?;
 
     // First result is the decoder config.
     let config = results.pop_front().unwrap();
@@ -492,7 +544,7 @@ async fn build_music_gen_parts(
         text_encoder: sessions.pop_front().unwrap(),
     };
 
-    let config = fs::read_to_string(config)
+    let config = tokio::fs::read_to_string(config)
         .await
         .expect("Error reading config file from disk");
     let config = serde_json::from_str(&config).expect("Could not deserialize config file");
@@ -539,29 +591,31 @@ async fn build_music_gen_parts(
     Ok((text_encoder, decoder, audio_encodec))
 }
 
-async fn download(
-    remote_file_spec: Vec<(&'static str, &'static str)>,
+async fn download<T: Display>(
+    remote_file_spec: Vec<(T, T)>,
     force_download: bool,
+    on_download_msg: &str,
+    on_finished_msg: &str,
 ) -> anyhow::Result<VecDeque<PathBuf>> {
-    let storage = AppFs::new(PROJECT_DIRS.data_dir());
     let mut has_to_download = force_download;
     for (_, local_filename) in remote_file_spec.iter() {
-        has_to_download = has_to_download || !storage.exists(local_filename).await?
+        has_to_download = has_to_download || !PROJECT_FS.exists(&local_filename.to_string()).await?
     }
 
     if has_to_download {
-        info!("Some AI models need to be downloaded, this only needs to be done once");
+        info!("{on_download_msg}");
     }
     let m = LoadingBarFactor::multi();
     let mut tasks = vec![];
     for (remote_file, local_filename) in remote_file_spec {
-        let bar = m.add(LoadingBarFactor::download_bar(local_filename));
-        let storage = storage.clone();
+        let remote_file = remote_file.to_string();
+        let local_filename = local_filename.to_string();
+        let bar = m.add(LoadingBarFactor::download_bar(&local_filename));
         tasks.push(tokio::spawn(async move {
-            storage
+            PROJECT_FS
                 .fetch_remote_data_file(
-                    remote_file,
-                    local_filename,
+                    &remote_file,
+                    &local_filename,
                     force_download,
                     bar.into_update_callback(),
                 )
@@ -574,7 +628,7 @@ async fn download(
     }
     m.clear()?;
     if has_to_download {
-        info!("AI models downloaded correctly");
+        info!("{on_finished_msg}");
     }
     Ok(results)
 }

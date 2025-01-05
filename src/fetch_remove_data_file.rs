@@ -35,7 +35,7 @@ impl AppFs {
         let resp = reqwest::get(url).await.map_err(io_err)?;
         let status_code = resp.status();
         if status_code != StatusCode::OK {
-            return Err(io_err(format!("Invalid status code {status_code}")));
+            return Err(io_err(format!("Error downloading {url}. Invalid status code {status_code}")));
         }
         let total_bytes = resp.content_length().unwrap_or_default() as usize;
 

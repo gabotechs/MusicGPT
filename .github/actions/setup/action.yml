@@ -29,24 +29,6 @@ runs:
         packages: librust-alsa-sys-dev
         version: 1.0
 
-    - if: runner.os == 'Linux'
-      uses: actions/cache@v4
-      with:
-        path: /home/runner/.cache/ort.pyke.io
-        key: ${{ runner.os }}-${{ inputs.targets }}-ort.pyke.io
-
-    - if: runner.os == 'macOS'
-      uses: actions/cache@v4
-      with:
-        path: /Users/runner/Library/Caches/ort.pyke.io
-        key: ${{ runner.os }}-${{ inputs.targets }}-ort.pyke.io
-
-    - if: runner.os == 'Windows'
-      uses: actions/cache@v4
-      with:
-        path: C:\\Users\\runneradmin\\AppData\\Local\\ort.pyke.io
-        key: ${{ runner.os }}-${{ inputs.targets }}-ort.pyke.io
-
     - if: runner.os == 'Windows'
       shell: powershell
       run: |
