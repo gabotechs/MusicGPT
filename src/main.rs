@@ -1,5 +1,4 @@
 use std::collections::VecDeque;
-use std::env::consts::ARCH;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
 use std::str::FromStr;
