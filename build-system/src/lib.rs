@@ -163,9 +163,7 @@ fn download_file(url: &str, output_path: &str) -> Result<(), Box<dyn std::error:
     }
 
     // Get the content length, if available
-    let total_size = response
-        .content_length()
-        .ok_or("Failed to get content length")?;
+    let total_size = response.content_length().unwrap_or_default();
 
     // Set up a progress bar
     let pb = ProgressBar::new(total_size);
