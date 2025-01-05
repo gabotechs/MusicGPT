@@ -166,6 +166,7 @@ pub fn build(
 fn download_file(url: &str, output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     // Create a temporary directory
     let temp_dir = env::temp_dir();
+    fs::create_dir_all(&temp_dir)?;
     let temp_file_path = temp_dir.join("temp_download_file");
 
     // Send the GET request
