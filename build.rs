@@ -10,6 +10,7 @@ mod build {
     #[allow(unused_imports)]
     use build_system::Accelarators;
     use std::env;
+    use std::path::PathBuf;
 
     pub(crate) fn build() -> Result<(), Box<dyn std::error::Error>> {
         println!("cargo:rerun-if-changed=build-system");
@@ -26,7 +27,7 @@ mod build {
         #[cfg(feature = "tensorrt")]
         accelerators.push(Accelarators::TENSORRT);
 
-        let info = build_system::build(format!("{manifest_dir}/target"), accelerators)?;
+        let info = build_system::build(PathBuf::from(manifest_dir).join("target"), accelerators)?;
         info.to_out_dir();
         Ok(())
     }

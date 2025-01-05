@@ -95,17 +95,22 @@ pub fn build(
     }
 
     #[cfg(target_os = "windows")]
-    let mut cmd = Command::new("cmd");
-    #[cfg(target_os = "windows")]
-    {
+    let mut cmd = {
+        let mut cmd = Command::new("cmd");
         cmd.arg("/C").arg("build.bat");
-    }
+        // I have no idea why I need to do this, but without this shit just
+        // doesn't work.
+        cmd.current_dir(repo.to_str().unwrap_or_default().replace("\\\\?\\", ""));
+        cmd
+    };
     #[cfg(not(target_os = "windows"))]
-    let mut cmd = Command::new("./build.sh");
+    let mut cmd = {
+        let mut cmd = Command::new("./build.sh");
+        cmd.current_dir(&repo);
+        cmd
+    };
 
-    let mut cmd = cmd
-        .current_dir(&repo)
-        .arg("--config")
+    cmd.arg("--config")
         .arg(PROFILE)
         .arg("--build_shared_lib")
         .arg("--parallel")
@@ -319,9 +324,11 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore]
     fn test_build() -> Result<(), Box<dyn std::error::Error>> {
-        build("../target", vec![])?;
+        let mut p = PathBuf::from(env::current_dir()?);
+        p.pop();
+        p.push("target");
+        build(p, vec![])?;
         Ok(())
     }
 }
