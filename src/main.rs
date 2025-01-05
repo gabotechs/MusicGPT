@@ -157,7 +157,13 @@ async fn _main() -> anyhow::Result<()> {
     args.validate()?;
 
     #[cfg(feature = "onnxruntime-from-source")]
-    let mut ort_builder = ort::init_from(lookup_dyn_onnxruntime_lib().await?);
+    let mut ort_builder = ort::init_from(
+        lookup_dyn_onnxruntime_lib()
+            .await?
+            .into_os_string()
+            .to_str()
+            .unwrap_or_default(),
+    );
     #[cfg(not(feature = "onnxruntime-from-source"))]
     let mut ort_builder = ort::init();
 
@@ -297,7 +303,7 @@ async fn cli_interface(args: &Args) -> anyhow::Result<()> {
 }
 
 #[cfg(feature = "onnxruntime-from-source")]
-async fn lookup_dyn_onnxruntime_lib() -> anyhow::Result<String> {
+async fn lookup_dyn_onnxruntime_lib() -> anyhow::Result<PathBuf> {
     // Build info dumped by the build-system crate at compile time.
     let BuildInfo {
         local_dynlib_filepaths,
@@ -315,8 +321,7 @@ async fn lookup_dyn_onnxruntime_lib() -> anyhow::Result<String> {
                 .await
                 .unwrap_or(false)
         {
-            let local_filepath = local_filepath.to_str().expect("local filepath is not UTF8");
-            return Ok(local_filepath.to_string());
+            return Ok(local_filepath);
         }
     }
 
@@ -337,7 +342,7 @@ async fn lookup_dyn_onnxruntime_lib() -> anyhow::Result<String> {
         "Dynamic libraries downloaded",
     )
     .await?;
-    Ok(format!("dynlibs/{version}/{main_dynlib_filename}"))
+    Ok(PROJECT_FS.path_buf(&format!("dynlibs/{version}/{main_dynlib_filename}")))
 }
 
 fn init_gpu() -> anyhow::Result<(&'static str, ExecutionProviderDispatch)> {
