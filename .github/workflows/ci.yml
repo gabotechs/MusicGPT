@@ -45,7 +45,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: cargo test -vv --no-default-features --features onnxruntime-from-source
+      - run: cargo test --no-default-features --features onnxruntime-from-source
 
   smoke-test:
     strategy:
@@ -57,7 +57,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: cargo run --release -vv --no-default-features --features onnxruntime-from-source -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
+      - run: cargo run --release --no-default-features --features onnxruntime-from-source -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
 
   tag:
     if: github.ref == 'refs/heads/main'
