@@ -39,26 +39,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-2022] # macos-latest TODO: backend::audio_generation_backend::tests::handles_job_cancellation and backend::server::tests::can_abort_a_job are timing out
+        os: [ubuntu-latest, windows-2022, macos-latest]
 
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: cargo test
+      - run: cargo test -vv --no-default-features --features onnxruntime-from-source
 
   smoke-test:
-    if: github.ref == 'refs/heads/main'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-2022]
+        os: [ubuntu-latest, windows-2022, macos-latest]
 
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
+      - run: cargo run --release -vv --no-default-features --features onnxruntime-from-source -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
 
   tag:
     if: github.ref == 'refs/heads/main'
@@ -149,16 +148,16 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            features: cuda
+            dynlib_ext: so
           - os: macos-latest
             target: aarch64-apple-darwin
-            features: coreml
+            dynlib_ext: dylib
           - os: macos-latest
             target: x86_64-apple-darwin
-            features: coreml
+            dynlib_ext: dylib
           - os: windows-2022
             target: x86_64-pc-windows-msvc
-            features: default
+            dynlib_ext: dll
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -166,7 +165,15 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           targets: ${{ matrix.target }}
-      - run: cargo build --release --target ${{ matrix.target }} --features ${{ matrix.features }}
-      - run: ./.github/bundle-release.sh ${{ matrix.target }}
+      - run: cargo build --no-default-features --release --target ${{ matrix.target }} --features onnxruntime-from-source
+      - run: |
+          ./.github/bundle-release.sh ${{ matrix.target }}
+          gh release upload v${{ needs.tag.outputs.version }} ${{ matrix.target }}.tar.gz
+          
+          pushd target >/dev/null
+          for file in *.${{ matrix.dynlib_ext }}; do
+             gh release upload v${{ needs.tag.outputs.version }} ${{ matrix.target }}-$file
+          done
+          popd >/dev/null
+
         shell: bash
-      - run: gh release upload v${{ needs.tag.outputs.version }} ${{ matrix.target }}.tar.gz

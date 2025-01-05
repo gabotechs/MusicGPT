@@ -1,6 +1,4 @@
 use async_trait::async_trait;
-use directories::ProjectDirs;
-use lazy_static::lazy_static;
 
 use crate::storage::{Storage, StorageFile};
 
@@ -111,11 +109,6 @@ impl Storage for AppFs {
             }
         }
     }
-}
-
-lazy_static! {
-    static ref PROJECT_DIRS: ProjectDirs = ProjectDirs::from("com", "gabotechs", "musicgpt")
-        .expect("Could not load project directory");
 }
 
 impl AppFs {

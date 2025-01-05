@@ -28,16 +28,6 @@ mkdir -p "${tmpdir}/${ARCHIVE}/lib"
 echo "Copying file ${RELEASE_DIR}/${BIN} to ${tmpdir}/${ARCHIVE}..."
 cp "${RELEASE_DIR}/${BIN}" "${tmpdir}/${ARCHIVE}"
 
-# https://github.com/pykeio/ort dumps symlinked dynamic libs into
-# target/release, so we must follow the links to the actual files.
-for file in $(ls $RELEASE_DIR); do
-  if [[ "$file" == *.so* ]]; then
-    link=$(readlink $RELEASE_DIR/$file)
-    echo "Copying file ${link} to ${tmpdir}/${ARCHIVE}/lib/${file}..."
-    cp "$link" "${tmpdir}/${ARCHIVE}/lib/${file}"
-  fi
-done
-
 cwd=$(pwd)
 pushd "${tmpdir}" >/dev/null
 tar acf "${cwd}/${ARCHIVE}.tar.gz" "${ARCHIVE}"

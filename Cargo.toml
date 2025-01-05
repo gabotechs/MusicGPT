@@ -9,6 +9,11 @@ readme = "README.md"
 repository = "https://github.com/gabotechs/MusicGPT"
 authors = ["gb.mt.me@gmail.com"]
 
+[workspace]
+members = [
+    "build-system"
+]
+
 [dependencies]
 openssl = { version = "0.10.59", features = ["vendored"] } # NOTE: neeeded for cross compilations
 clap = { version = "4.5.4", features = ["derive"] }
@@ -26,7 +31,7 @@ futures-util = "0.3.30"
 serde = { version = "1.0.200" }
 serde_json = "1.0.116"
 cpal = "0.15.3"
-ort = { version = "2.0.0-rc.9", features = ["half"] }
+ort = { version = "2.0.0-rc.9", features = ["half", "ndarray"], default-features = false }
 half = { version = "2.4.1", features = ["num-traits"] }
 lazy_static = "1.4.0"
 tracing = "0.1.40"
@@ -38,21 +43,30 @@ text_io = "0.1.12"
 regex = "1.10.4"
 async-stream = "0.3.5"
 hostname = "0.4.0"
+built = "0.7.5"
+build-system = { path = "./build-system" }
 
 # Web UI deps, potentially hide behind a flag
 tokio-util = "0.7.11"
 tokio-tungstenite = "0.21.0"
 specta = { version = "1.0.5", features = ["uuid", "serde", "typescript", "export"] }
 axum = { version = "0.7.5", features = ["ws"] }
-tower-http = { version = "0.5.2" , features = ["fs"]}
+tower-http = { version = "0.5.2", features = ["fs"] }
 open = "5.1.2"
 chrono = "0.4.38"
 scopeguard = "1.2.0"
 time = "0.3.36"
 
 [features]
-default = []
+default = [
+    "onnxruntime-from-cdn"
+]
 coreml = ["ort/coreml"]
 tensorrt = ["ort/tensorrt"]
 cuda = ["ort/cuda"]
+onnxruntime-from-source = ["ort/load-dynamic"]
+onnxruntime-from-cdn = ["ort/copy-dylibs", "ort/download-binaries"]
 
+[build-dependencies]
+built = "0.7.5"
+build-system = { path = "./build-system" }
