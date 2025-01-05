@@ -100,13 +100,18 @@ pub fn build(
         cmd.arg("/C").arg("build.bat");
         // I have no idea why I need to do this, but without this shit just
         // doesn't work.
-        cmd.current_dir(repo.to_str().unwrap_or_default().replace("\\\\?\\", ""));
+        fn windows_fix_path(p: &PathBuf) -> String {
+            p.to_str().unwrap_or_default().replace("\\\\?\\", "")
+        }
+        cmd.current_dir(windows_fix_path(&repo))
+            .arg("--build_dir")
+            .arg(windows_fix_path(&build_dir));
         cmd
     };
     #[cfg(not(target_os = "windows"))]
     let mut cmd = {
         let mut cmd = Command::new("./build.sh");
-        cmd.current_dir(&repo);
+        cmd.current_dir(&repo).arg("--build_dir").arg(&build_dir);
         cmd
     };
 
@@ -115,9 +120,7 @@ pub fn build(
         .arg("--build_shared_lib")
         .arg("--parallel")
         .arg("--compile_no_warning_as_error")
-        .arg("--skip_tests")
-        .arg("--build_dir")
-        .arg(&build_dir);
+        .arg("--skip_tests");
 
     let build_dir = build_dir.join(PROFILE);
 
