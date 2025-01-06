@@ -1,9 +1,9 @@
 use flate2::read::GzDecoder;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
-use serde_json::Serializer;
 use std::fmt::Display;
 use std::fs::File;
+use std::hash::{DefaultHasher, Hasher};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -44,8 +44,6 @@ pub struct BuildInfo {
     pub main_dynlib_filename: String,
     /// filenames of the generated dynamic libraries.
     pub dynlib_filenames: Vec<String>,
-
-    cmd: String,
 }
 
 impl Display for BuildInfo {
@@ -102,7 +100,7 @@ impl BuildInfo {
     }
 
     /// Dumps the BuildInfo into out dir.
-    fn to_out_dir(&self, dir: &PathBuf) {
+    fn to_dir(&self, dir: &PathBuf) {
         let file = dir.join("onnxruntime-build-info.json");
         fs::write(
             &file,
@@ -194,16 +192,13 @@ pub fn build(
         };
     }
 
-    let cmd_str = format!("{:?}", cmd);
+    let build_info_dir = dir.join(calculate_hash(&format!("{cmd:?}")));
+    fs::create_dir_all(&build_info_dir)?;
 
-    if let Some(build_info) = BuildInfo::from_dir(&dir) {
+    if let Some(build_info) = BuildInfo::from_dir(&build_info_dir) {
         if build_info.dynlibs_exist() {
-            if build_info.cmd != cmd_str {
-                println!("All dynlib files exist, but the where build with a different command, recompiling...");
-            } else {
-                println!("All dynlib files already exist, nothing to do");
-                return Ok(build_info);
-            }
+            println!("All dynlib files already exist, nothing to do");
+            return Ok(build_info);
         }
     }
 
@@ -228,7 +223,7 @@ pub fn build(
 
         if file.ends_with(DYN_LIB_EXT) {
             let src = build_dir.join(&file);
-            let dst = dir.join(&file);
+            let dst = build_info_dir.join(&file);
             fs::copy(&src, &dst)?;
             local_dynlib_filepaths.push(dst);
             dynlib_filenames.push(file.clone());
@@ -239,9 +234,8 @@ pub fn build(
         onnxruntime_version: ONNX_RELEASE.to_string(),
         main_dynlib_filename: MAIN_DYNLIB_FILENAME.to_string(),
         dynlib_filenames,
-        cmd: cmd_str,
     };
-    build_info.to_out_dir(&dir);
+    build_info.to_dir(&build_info_dir);
     Ok(build_info)
 }
 
@@ -403,6 +397,18 @@ fn dir_exists<P: AsRef<Path>>(path: P) -> bool {
     fs::metadata(path)
         .map(|metadata| metadata.is_dir())
         .unwrap_or(false)
+}
+
+fn calculate_hash(input: &str) -> String {
+    // Create a Sha256 object
+    let mut hasher = DefaultHasher::new();
+
+    // Write input data
+    hasher.write(input.as_ref());
+
+    // Read hash digest and convert to hex
+    let result = hasher.finish();
+    format!("{:x}", result)
 }
 
 #[cfg(test)]
