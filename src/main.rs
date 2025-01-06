@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::path::PathBuf;
+use std::process::exit;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -216,7 +217,8 @@ async fn main() {
         .with_env_filter(filter)
         .init();
     if let Err(err) = _main().await {
-        error!("{err}")
+        error!("{err}");
+        exit(1)
     }
 }
 
