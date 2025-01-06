@@ -18,6 +18,13 @@ const DYN_LIB_EXT: &str = "dll";
 #[cfg(target_os = "linux")]
 const DYN_LIB_EXT: &str = "so";
 
+#[cfg(target_os = "macos")]
+const MAIN_DYNLIB_FILENAME: &str = "libonnxruntime.dylib";
+#[cfg(target_os = "windows")]
+const MAIN_DYNLIB_FILENAME: &str = "libonnxruntime.so";
+#[cfg(target_os = "linux")]
+const MAIN_DYNLIB_FILENAME: &str = "onnxruntime.dll";
+
 pub enum Accelerators {
     COREML,
     TENSORRT,
@@ -137,7 +144,6 @@ pub fn build(
 
     let mut local_dynlib_filepaths = vec![];
     let mut dynlib_filenames = vec![];
-    let mut main_dynlib_filename = String::new();
     for file in fs::read_dir(&build_dir)? {
         let file = match file {
             Ok(v) => v.file_name().to_str().unwrap_or("").to_string(),
@@ -151,15 +157,11 @@ pub fn build(
             local_dynlib_filepaths.push(dst);
             dynlib_filenames.push(file.clone());
         }
-
-        if file == format!("libonnxruntime.{DYN_LIB_EXT}") {
-            main_dynlib_filename = file.to_string();
-        }
     }
     Ok(BuildInfo {
         local_dynlib_filepaths,
         version: ONNX_RELEASE.to_string(),
-        main_dynlib_filename,
+        main_dynlib_filename: MAIN_DYNLIB_FILENAME.to_string(),
         dynlib_filenames,
     })
 }
