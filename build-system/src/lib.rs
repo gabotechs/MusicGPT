@@ -1,6 +1,7 @@
 use flate2::read::GzDecoder;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
+use serde_json::Serializer;
 use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -55,7 +56,7 @@ impl Display for BuildInfo {
             self.local_dynlib_filepaths.len(),
             self.local_dynlib_filepaths
                 .iter()
-                .map(|v| format!("\"{}\"", v.to_string_lossy()))
+                .map(|v| format!("{}", serde_json::ser::to_string(v).unwrap()))
                 .reduce(|a, b| format!("{a}, {b}"))
                 .unwrap_or_default()
         )?;
