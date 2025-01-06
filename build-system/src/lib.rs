@@ -13,17 +13,18 @@ const PROFILE: &str = "Release";
 
 #[cfg(target_os = "macos")]
 const DYN_LIB_EXT: &str = "dylib";
-#[cfg(target_os = "windows")]
-const DYN_LIB_EXT: &str = "dll";
-#[cfg(target_os = "linux")]
-const DYN_LIB_EXT: &str = "so";
-
 #[cfg(target_os = "macos")]
 const MAIN_DYNLIB_FILENAME: &str = "libonnxruntime.dylib";
+
 #[cfg(target_os = "windows")]
-const MAIN_DYNLIB_FILENAME: &str = "libonnxruntime.so";
-#[cfg(target_os = "linux")]
+const DYN_LIB_EXT: &str = "dll";
+#[cfg(target_os = "windows")]
 const MAIN_DYNLIB_FILENAME: &str = "onnxruntime.dll";
+
+#[cfg(target_os = "linux")]
+const DYN_LIB_EXT: &str = "so";
+#[cfg(target_os = "linux")]
+const MAIN_DYNLIB_FILENAME: &str = "libonnxruntime.so";
 
 pub enum Accelerators {
     COREML,
