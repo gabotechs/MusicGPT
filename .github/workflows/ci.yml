@@ -171,7 +171,7 @@ jobs:
           ./.github/bundle-release.sh ${{ matrix.target }}
           gh release upload v${{ needs.tag.outputs.version }} ${{ matrix.target }}.tar.gz
           
-          pushd target >/dev/null
+          pushd ${{ env.ONNXRUNTIME_BUILD_DIR }} >/dev/null
           for file in *.${{ matrix.dynlib_ext }}; do
              gh release upload v${{ needs.tag.outputs.version }} ${{ matrix.target }}-$file
           done
