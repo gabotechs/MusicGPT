@@ -34,7 +34,7 @@ mod build {
         };
 
         let info = build_system::build(dir, accelerators)?;
-        info.to_out_dir();
+        info.write_build_info();
         Ok(())
     }
 }

@@ -1,6 +1,7 @@
 use flate2::read::GzDecoder;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
@@ -32,51 +33,109 @@ pub enum Accelerators {
     CUDA,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Deserialize, Serialize, Clone)]
 pub struct BuildInfo {
     /// absolute path to all the compiled dynamic library files.
     pub local_dynlib_filepaths: Vec<PathBuf>,
     /// version of the onnxruntime.
-    pub version: String,
+    pub onnxruntime_version: String,
     /// filename of the main library.
     pub main_dynlib_filename: String,
     /// filenames of the generated dynamic libraries.
     pub dynlib_filenames: Vec<String>,
 }
 
+impl Display for BuildInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "pub const LOCAL_DYNLIB_FILEPATHS: [&str; {}] = [{}];",
+            self.local_dynlib_filepaths.len(),
+            self.local_dynlib_filepaths
+                .iter()
+                .map(|v| format!("\"{}\"", v.to_string_lossy()))
+                .reduce(|a, b| format!("{a}, {b}"))
+                .unwrap_or_default()
+        )?;
+        writeln!(
+            f,
+            "pub const ONNXRUNTIME_VERSION: &str = \"{}\";",
+            self.onnxruntime_version
+        )?;
+        writeln!(
+            f,
+            "pub const MAIN_DYNLIB_FILENAME: &str = \"{}\";",
+            self.main_dynlib_filename
+        )?;
+        writeln!(
+            f,
+            "pub const DYNLIB_FILENAMES: [&str; {}] = [{}];",
+            self.dynlib_filenames.len(),
+            self.dynlib_filenames
+                .iter()
+                .map(|v| format!("\"{v}\""))
+                .reduce(|a, b| format!("{a}, {b}"))
+                .unwrap_or_default()
+        )?;
+
+        Ok(())
+    }
+}
+
 impl BuildInfo {
-    /// Loads the BuildInfo from the out dir. This function must always be called
-    /// with the `BuildInfo.from_out_dir(env!("OUT_DIR"))` argument.
-    pub fn from_out_dir<'a>(out_dir: &str) -> Self {
-        let file = format!("{out_dir}/onnxruntime-build-info.json");
-        let content = fs::read(&file).expect(&format!("Could not read build info from {file}"));
-        serde_json::from_slice(&content).expect("Could not deserialize build info")
+    /// Loads the BuildInfo from the out dir.
+    fn from_dir(dir: &PathBuf) -> Option<Self> {
+        let file = dir.join("onnxruntime-build-info.json");
+        if file_exists(&file) {
+            let content =
+                fs::read(&file).expect(&format!("Could not read build info from {file:?}"));
+            match serde_json::from_slice::<BuildInfo>(&content) {
+                Ok(info) => Some(info),
+                Err(_) => None,
+            }
+        } else {
+            None
+        }
     }
 
-    /// Dumps the BuildInfo into out dir. This function must always be called
-    /// with the `build_info.to_out_dir()` argument.
-    pub fn to_out_dir(&self) {
-        let file = format!(
-            "{}/onnxruntime-build-info.json",
-            env::var("OUT_DIR").expect("OUT_DIR var not present")
-        );
+    /// Dumps the BuildInfo into out dir.
+    fn to_out_dir(&self, dir: &PathBuf) {
+        let file = dir.join("onnxruntime-build-info.json");
         fs::write(
             &file,
             serde_json::to_string_pretty(&self).expect("could not serialize build info"),
         )
-        .expect(&format!("could not dump build info into {file}"));
+        .expect(&format!("could not dump build info into {file:?}"));
+    }
+
+    fn dynlibs_exist(&self) -> bool {
+        for file in &self.local_dynlib_filepaths {
+            if !file_exists(file) {
+                return false;
+            }
+        }
+        true
+    }
+
+
+    /// Dumps the BuildInfo into out dir. This function must always be called
+    /// with the `build_info.to_out_dir()` argument.
+    pub fn write_build_info(&self) {
+        let file = PathBuf::from(env::var("OUT_DIR").unwrap()).join("build_info.rs");
+        fs::write(&file, self.to_string())
+            .expect(&format!("could not dump build info into {file:?}"));
     }
 }
 
 /// builds onnxruntime from source using a C++ toolchain installed in the system,
-/// and copies all the generated dynamic libs to `out_dir`.
+/// and copies all the generated dynamic libs to `dir`.
 ///
 /// # Arguments
 ///
-/// * `out_dir`: the folder in which the onnxruntime project will be built.
+/// * `dir`: the folder in which the onnxruntime project will be built.
 /// * `accelerators`: all the accelerators with which the onnxruntime project will be compiled.
 ///
-/// returns: a list of paths with the generated dynamic libs.
+/// returns: all the information regarding the compilation artifacts. 
 pub fn build(
     dir: PathBuf,
     accelerators: Vec<Accelerators>,
@@ -93,6 +152,13 @@ pub fn build(
 
     let repo = dir.join(&name);
     let build_dir = repo.join("build");
+
+    if let Some(build_info) = BuildInfo::from_dir(&dir) {
+        if build_info.dynlibs_exist() {
+            println!("All dynlib files already exist, nothing to do");
+            return Ok(build_info)
+        }
+    }
 
     if !file_exists(tar_gz) {
         println!("Downloading {url}...");
@@ -159,12 +225,14 @@ pub fn build(
             dynlib_filenames.push(file.clone());
         }
     }
-    Ok(BuildInfo {
+    let build_info = BuildInfo {
         local_dynlib_filepaths,
-        version: ONNX_RELEASE.to_string(),
+        onnxruntime_version: ONNX_RELEASE.to_string(),
         main_dynlib_filename: MAIN_DYNLIB_FILENAME.to_string(),
         dynlib_filenames,
-    })
+    };
+    build_info.to_out_dir(&dir);
+    Ok(build_info)
 }
 
 fn download_file(url: &str, output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
