@@ -162,7 +162,6 @@ async fn _main() -> anyhow::Result<()> {
     let mut ort_builder = ort::init_from(
         lookup_dyn_onnxruntime_lib()
             .await?
-            .into_os_string()
             .to_str()
             .unwrap_or_default(),
     );
@@ -337,7 +336,9 @@ async fn lookup_dyn_onnxruntime_lib() -> anyhow::Result<PathBuf> {
         "Dynamic libraries downloaded",
     )
     .await?;
-    Ok(PROJECT_FS.path_buf(&format!("dynlibs/{ONNXRUNTIME_VERSION}/{MAIN_DYNLIB_FILENAME}")))
+    Ok(PROJECT_FS.path_buf(&format!(
+        "dynlibs/{ONNXRUNTIME_VERSION}/{MAIN_DYNLIB_FILENAME}"
+    )))
 }
 
 fn init_gpu() -> anyhow::Result<(&'static str, ExecutionProviderDispatch)> {
