@@ -102,25 +102,25 @@ pub fn build(
         extract_tar_gz(tar_gz, dir.to_str().unwrap())?;
     }
 
-    #[cfg(target_os = "windows")]
-    let mut cmd = {
-        let mut cmd = Command::new("cmd");
-        cmd.arg("/C").arg("build.bat");
+    let mut cmd = if cfg!(target_os = "windows") {
+        Command::new("cmd")
+    } else {
+        Command::new("./build.sh")
+    };
+
+    let mut cmd = if cfg!(target_os = "windows") {
         // I have no idea why I need to do this, but without this shit just
         // doesn't work.
         fn windows_fix_path(p: &PathBuf) -> String {
             p.to_str().unwrap_or_default().replace("\\\\?\\", "")
         }
         cmd.current_dir(windows_fix_path(&repo))
+            .arg("/C")
+            .arg("build.bat")
             .arg("--build_dir")
-            .arg(windows_fix_path(&build_dir));
-        cmd
-    };
-    #[cfg(not(target_os = "windows"))]
-    let mut cmd = {
-        let mut cmd = Command::new("./build.sh");
-        cmd.current_dir(&repo).arg("--build_dir").arg(&build_dir);
-        cmd
+            .arg(windows_fix_path(&build_dir))
+    } else {
+        cmd.current_dir(&repo).arg("--build_dir").arg(&build_dir)
     };
 
     cmd.arg("--config")
