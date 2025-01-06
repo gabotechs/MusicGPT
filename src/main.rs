@@ -12,7 +12,6 @@ use crate::music_gen_decoder::{MusicGenDecoder, MusicGenMergedDecoder, MusicGenS
 use crate::music_gen_text_encoder::MusicGenTextEncoder;
 use crate::storage::{AppFs, Storage};
 use anyhow::anyhow;
-use build_system::BuildInfo;
 use clap::{Parser, ValueEnum};
 use directories::ProjectDirs;
 use half::f16;
@@ -46,6 +45,8 @@ mod storage;
 mod tensor_ops;
 
 include!(concat!(env!("OUT_DIR"), "/built.rs"));
+#[cfg(feature = "onnxruntime-from-source")]
+include!(concat!(env!("OUT_DIR"), "/build_info.rs"));
 
 #[derive(Clone, Copy, ValueEnum)]
 enum Model {
@@ -306,34 +307,26 @@ async fn cli_interface(args: &Args) -> anyhow::Result<()> {
 
 #[cfg(feature = "onnxruntime-from-source")]
 async fn lookup_dyn_onnxruntime_lib() -> anyhow::Result<PathBuf> {
-    // Build info dumped by the build-system crate at compile time.
-    let BuildInfo {
-        local_dynlib_filepaths,
-        main_dynlib_filename,
-        dynlib_filenames,
-        version,
-    } = BuildInfo::from_out_dir(env!("OUT_DIR"));
-
     // If running with Cargo, build.rs have set this ONNXRUNTIME_LOCAL_FILES env to the
     // path of the generated dynamic library files compiled from source.
     // If not running with cargo, this will not be set.
-    for local_filepath in local_dynlib_filepaths {
-        if local_filepath.ends_with(&main_dynlib_filename)
+    for local_filepath in LOCAL_DYNLIB_FILEPATHS {
+        if local_filepath.ends_with(&MAIN_DYNLIB_FILENAME)
             && tokio::fs::try_exists(&local_filepath)
                 .await
                 .unwrap_or(false)
         {
-            return Ok(local_filepath);
+            return Ok(PathBuf::from(local_filepath));
         }
     }
 
     // If there's no local file, attempt to download it from a GitHub release.
-    let remote_file_spec = dynlib_filenames
+    let remote_file_spec = DYNLIB_FILENAMES
         .iter()
         .map(|v| {
             (
                 format!("{PKG_REPOSITORY}/releases/download/v{PKG_VERSION}/{TARGET}-{v}"),
-                format!("dynlibs/{version}/{v}"),
+                format!("dynlibs/{ONNXRUNTIME_VERSION}/{v}"),
             )
         })
         .collect::<Vec<_>>();
@@ -344,7 +337,7 @@ async fn lookup_dyn_onnxruntime_lib() -> anyhow::Result<PathBuf> {
         "Dynamic libraries downloaded",
     )
     .await?;
-    Ok(PROJECT_FS.path_buf(&format!("dynlibs/{version}/{main_dynlib_filename}")))
+    Ok(PROJECT_FS.path_buf(&format!("dynlibs/{ONNXRUNTIME_VERSION}/{MAIN_DYNLIB_FILENAME}")))
 }
 
 fn init_gpu() -> anyhow::Result<(&'static str, ExecutionProviderDispatch)> {

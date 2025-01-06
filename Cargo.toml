@@ -44,7 +44,6 @@ regex = "1.10.4"
 async-stream = "0.3.5"
 hostname = "0.4.0"
 built = "0.7.5"
-build-system = { path = "./build-system" }
 
 # Web UI deps, potentially hide behind a flag
 tokio-util = "0.7.11"
