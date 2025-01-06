@@ -43,6 +43,8 @@ pub struct BuildInfo {
     pub main_dynlib_filename: String,
     /// filenames of the generated dynamic libraries.
     pub dynlib_filenames: Vec<String>,
+
+    cmd: String,
 }
 
 impl Display for BuildInfo {
@@ -117,7 +119,6 @@ impl BuildInfo {
         true
     }
 
-
     /// Dumps the BuildInfo into out dir. This function must always be called
     /// with the `build_info.to_out_dir()` argument.
     pub fn write_build_info(&self) {
@@ -135,7 +136,7 @@ impl BuildInfo {
 /// * `dir`: the folder in which the onnxruntime project will be built.
 /// * `accelerators`: all the accelerators with which the onnxruntime project will be compiled.
 ///
-/// returns: all the information regarding the compilation artifacts. 
+/// returns: all the information regarding the compilation artifacts.
 pub fn build(
     dir: PathBuf,
     accelerators: Vec<Accelerators>,
@@ -152,22 +153,6 @@ pub fn build(
 
     let repo = dir.join(&name);
     let build_dir = repo.join("build");
-
-    if let Some(build_info) = BuildInfo::from_dir(&dir) {
-        if build_info.dynlibs_exist() {
-            println!("All dynlib files already exist, nothing to do");
-            return Ok(build_info)
-        }
-    }
-
-    if !file_exists(tar_gz) {
-        println!("Downloading {url}...");
-        download_file(&url, tar_gz)?;
-    }
-    if !dir_exists(&repo) {
-        println!("Extracting {tar_gz}...");
-        extract_tar_gz(tar_gz, dir.to_str().unwrap())?;
-    }
 
     let mut cmd = if cfg!(target_os = "windows") {
         Command::new("cmd")
@@ -195,6 +180,7 @@ pub fn build(
         .arg("--build_shared_lib")
         .arg("--parallel")
         .arg("--compile_no_warning_as_error")
+        .arg("--skip_submodule_sync")
         .arg("--skip_tests");
 
     let build_dir = build_dir.join(PROFILE);
@@ -205,6 +191,28 @@ pub fn build(
             Accelerators::TENSORRT => cmd.arg("--use_tensorrt"),
             Accelerators::CUDA => cmd.arg("--use_cuda"),
         };
+    }
+
+    let cmd_str = format!("{:?}", cmd);
+
+    if let Some(build_info) = BuildInfo::from_dir(&dir) {
+        if build_info.dynlibs_exist() {
+            if build_info.cmd != cmd_str {
+                println!("All dynlib files exist, but the where build with a different command, recompiling...");
+            } else {
+                println!("All dynlib files already exist, nothing to do");
+                return Ok(build_info);
+            }
+        }
+    }
+
+    if !file_exists(tar_gz) {
+        println!("Downloading {url}...");
+        download_file(&url, tar_gz)?;
+    }
+    if !dir_exists(&repo) {
+        println!("Extracting {tar_gz}...");
+        extract_tar_gz(tar_gz, dir.to_str().unwrap())?;
     }
 
     run_command_with_output(&mut cmd)?;
@@ -230,6 +238,7 @@ pub fn build(
         onnxruntime_version: ONNX_RELEASE.to_string(),
         main_dynlib_filename: MAIN_DYNLIB_FILENAME.to_string(),
         dynlib_filenames,
+        cmd: cmd_str,
     };
     build_info.to_out_dir(&dir);
     Ok(build_info)
