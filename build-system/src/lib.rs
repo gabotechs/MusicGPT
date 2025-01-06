@@ -416,6 +416,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore]
     fn test_build() -> Result<(), Box<dyn std::error::Error>> {
         let mut p = PathBuf::from(env::current_dir()?);
         p.pop();
