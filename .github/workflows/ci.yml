@@ -24,6 +24,7 @@ concurrency:
 
 env:
   GH_TOKEN: ${{ github.token }}
+  ONNXRUNTIME_BUILD_DIR: ".onnxruntime"
 
 jobs:
   clippy:

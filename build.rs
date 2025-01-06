@@ -17,6 +17,7 @@ mod build {
         println!("cargo:rerun-if-env-changed=CARGO_FEATURE_COREML");
         println!("cargo:rerun-if-env-changed=CARGO_FEATURE_TENSORRT");
         println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CUDA");
+        println!("cargo:rerun-if-env-changed=ONNXRUNTIME_BUILD_DIR");
         let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
         #[allow(unused_mut)]
         let mut accelerators = vec![];
@@ -27,7 +28,12 @@ mod build {
         #[cfg(feature = "tensorrt")]
         accelerators.push(Accelerators::TENSORRT);
 
-        let info = build_system::build(PathBuf::from(manifest_dir).join("target"), accelerators)?;
+        let dir = match env::var("ONNXRUNTIME_BUILD_DIR") {
+            Ok(p) => PathBuf::from(p),
+            Err(_) => PathBuf::from(manifest_dir).join("target"),
+        };
+
+        let info = build_system::build(dir, accelerators)?;
         info.to_out_dir();
         Ok(())
     }

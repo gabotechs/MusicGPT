@@ -70,7 +70,7 @@ impl BuildInfo {
 ///
 /// returns: a list of paths with the generated dynamic libs.
 pub fn build(
-    out_dir: impl Into<PathBuf>,
+    dir: PathBuf,
     accelerators: Vec<Accelerators>,
 ) -> Result<BuildInfo, Box<dyn std::error::Error>> {
     let url = format!(
@@ -78,11 +78,12 @@ pub fn build(
     );
     let name = format!("onnxruntime-{ONNX_RELEASE}");
 
-    let out_dir = fs::canonicalize(out_dir.into())?;
-    let tar_gz = out_dir.join(format!("{name}.tar.gz"));
+    fs::create_dir_all(&dir)?;
+    let dir = fs::canonicalize(&dir)?;
+    let tar_gz = dir.join(format!("{name}.tar.gz"));
     let tar_gz = tar_gz.to_str().unwrap();
 
-    let repo = out_dir.join(&name);
+    let repo = dir.join(&name);
     let build_dir = repo.join("build");
 
     if !file_exists(tar_gz) {
@@ -91,7 +92,7 @@ pub fn build(
     }
     if !dir_exists(&repo) {
         println!("Extracting {tar_gz}...");
-        extract_tar_gz(tar_gz, out_dir.to_str().unwrap())?;
+        extract_tar_gz(tar_gz, dir.to_str().unwrap())?;
     }
 
     #[cfg(target_os = "windows")]
@@ -145,7 +146,7 @@ pub fn build(
 
         if file.ends_with(DYN_LIB_EXT) {
             let src = build_dir.join(&file);
-            let dst = out_dir.join(&file);
+            let dst = dir.join(&file);
             fs::copy(&src, &dst)?;
             local_dynlib_filepaths.push(dst);
             dynlib_filenames.push(file.clone());
