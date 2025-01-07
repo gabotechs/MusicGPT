@@ -182,7 +182,7 @@ pub fn build(
         .arg("--skip_submodule_sync")
         .arg("--skip_tests");
 
-    let build_dir = build_dir.join(PROFILE);
+
 
     for accelerator in accelerators {
         match accelerator {
@@ -213,6 +213,12 @@ pub fn build(
 
     run_command_with_output(&mut cmd)?;
 
+    let build_dir = build_dir.join(PROFILE);
+    // For some reason, in windows, the .dll files come out double nested
+    // in a {PROFILE}/{PROFILE} folder.
+    #[cfg(target_os = "windows")]
+    let build_dir = build_dir.join(PROFILE);
+
     let mut local_dynlib_filepaths = vec![];
     let mut dynlib_filenames = vec![];
     for file in fs::read_dir(&build_dir)? {
@@ -229,6 +235,10 @@ pub fn build(
             dynlib_filenames.push(file.clone());
         }
     }
+    if local_dynlib_filepaths.is_empty() {
+        panic!("No dynamic file was generated in {build_dir:?}")
+    }
+
     let build_info = BuildInfo {
         local_dynlib_filepaths,
         onnxruntime_version: ONNX_RELEASE.to_string(),
@@ -416,7 +426,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore]
+    // #[ignore]
     fn test_build() -> Result<(), Box<dyn std::error::Error>> {
         let mut p = PathBuf::from(env::current_dir()?);
         p.pop();
