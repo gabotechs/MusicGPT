@@ -83,16 +83,38 @@ impl Display for BuildInfo {
     }
 }
 
+macro_rules! must {
+    ($exp:expr, $($arg:tt)*) => {
+        match $exp {
+            Ok(v) => v,
+            Err(e) => {
+                let formatted = format!($($arg)*);
+                panic!("{formatted}: {e}")
+            }
+        }
+    };
+}
+
+macro_rules! log {
+    ($($arg:tt)*) => {
+        let formatted = format!($($arg)*);
+        println!("[onnxruntime-build-system] {}", formatted);
+    };
+}
+
 impl BuildInfo {
     /// Loads the BuildInfo from the out dir.
     fn from_dir(dir: &PathBuf) -> Option<Self> {
         let file = dir.join("onnxruntime-build-info.json");
         if file_exists(&file) {
-            let content =
-                fs::read(&file).expect(&format!("Could not read build info from {file:?}"));
+            log!("BuildInfo exists on {file:?}");
+            let content = must!(fs::read(&file), "Could not read build info from {file:?}");
             match serde_json::from_slice::<BuildInfo>(&content) {
                 Ok(info) => Some(info),
-                Err(_) => None,
+                Err(_) => {
+                    log!("Failed to parse build info, assuming as if it was not there");
+                    None
+                },
             }
         } else {
             None
@@ -102,11 +124,16 @@ impl BuildInfo {
     /// Dumps the BuildInfo into out dir.
     fn to_dir(&self, dir: &PathBuf) {
         let file = dir.join("onnxruntime-build-info.json");
-        fs::write(
-            &file,
-            serde_json::to_string_pretty(&self).expect("could not serialize build info"),
+        must!(
+            fs::write(
+                &file,
+                must!(
+                    serde_json::to_string_pretty(&self),
+                    "Could not serialize build info"
+                ),
+            ),
+            "could not dump build info into {file:?}"
         )
-        .expect(&format!("could not dump build info into {file:?}"));
     }
 
     fn dynlibs_exist(&self) -> bool {
@@ -121,9 +148,12 @@ impl BuildInfo {
     /// Dumps the BuildInfo into out dir. This function must always be called
     /// with the `build_info.to_out_dir()` argument.
     pub fn write_build_info(&self) {
-        let file = PathBuf::from(env::var("OUT_DIR").unwrap()).join("build_info.rs");
-        fs::write(&file, self.to_string())
-            .expect(&format!("could not dump build info into {file:?}"));
+        let file = PathBuf::from(must!(env::var("OUT_DIR"), "OUT_DIR env var not set"))
+            .join("build_info.rs");
+        must!(
+            fs::write(&file, self.to_string()),
+            "could not dump build info into {file:?}"
+        )
     }
 }
 
@@ -136,17 +166,20 @@ impl BuildInfo {
 /// * `accelerators`: all the accelerators with which the onnxruntime project will be compiled.
 ///
 /// returns: all the information regarding the compilation artifacts.
-pub fn build(
-    dir: PathBuf,
-    accelerators: Vec<Accelerators>,
-) -> Result<BuildInfo, Box<dyn std::error::Error>> {
+pub fn build(dir: PathBuf, accelerators: Vec<Accelerators>) -> BuildInfo {
     let url = format!(
         "https://github.com/microsoft/onnxruntime/archive/refs/tags/v{ONNX_RELEASE}.tar.gz"
     );
     let name = format!("onnxruntime-{ONNX_RELEASE}");
 
-    fs::create_dir_all(&dir)?;
-    let dir = fs::canonicalize(&dir)?;
+    must!(
+        fs::create_dir_all(&dir),
+        "Failed to create directory: {dir:?}"
+    );
+    let dir = must!(
+        fs::canonicalize(&dir),
+        "Failed to canonicalize directory: {dir:?}"
+    );
     let tar_gz = dir.join(format!("{name}.tar.gz"));
     let tar_gz = tar_gz.to_str().unwrap();
 
@@ -190,26 +223,34 @@ pub fn build(
         };
     }
 
+    log!("build command is: {cmd:?}");
     let build_info_dir = dir.join(calculate_hash(&format!("{cmd:?}")));
-    fs::create_dir_all(&build_info_dir)?;
+    must!(
+        fs::create_dir_all(&build_info_dir),
+        "Failed to create directory: {build_info_dir:?}"
+    );
 
     if let Some(build_info) = BuildInfo::from_dir(&build_info_dir) {
         if build_info.dynlibs_exist() {
-            println!("All dynlib files already exist, nothing to do");
-            return Ok(build_info);
+            log!("All dynlib files already exist, nothing to do");
+            return build_info;
+        } else {
+            log!("BuildInfo exists on {build_info_dir:?}, but its referencing dynamic library files do not exist");
         }
+    } else {
+        log!("BuildInfo not found in {build_info_dir:?}, compiling onnxruntime project from source");
     }
 
     if !file_exists(tar_gz) {
-        println!("Downloading {url}...");
-        download_file(&url, tar_gz)?;
+        log!("File {tar_gz:?} does not exist, downloading it from {url}...");
+        download_file(&url, tar_gz);
     }
     if !dir_exists(&repo) {
-        println!("Extracting {tar_gz}...");
-        extract_tar_gz(tar_gz, dir.to_str().unwrap())?;
+        log!("Extracting {tar_gz}...");
+        extract_tar_gz(tar_gz, dir.to_str().unwrap());
     }
 
-    run_command_with_output(&mut cmd)?;
+    run_command_with_output(&mut cmd);
 
     let build_dir = build_dir.join(PROFILE);
     // For some reason, in windows, the .dll files come out double nested
@@ -219,7 +260,7 @@ pub fn build(
 
     let mut local_dynlib_filepaths = vec![];
     let mut dynlib_filenames = vec![];
-    for file in fs::read_dir(&build_dir)? {
+    for file in fs::read_dir(&build_dir).unwrap() {
         let file = match file {
             Ok(v) => v.file_name().to_str().unwrap_or("").to_string(),
             Err(_) => continue,
@@ -228,9 +269,13 @@ pub fn build(
         if file.ends_with(DYN_LIB_EXT) {
             let src = build_dir.join(&file);
             let dst = build_info_dir.join(&file);
-            fs::copy(&src, &dst)?;
+            must!(
+                fs::copy(&src, &dst),
+                "Error copying file from {src:?} to {dst:?}"
+            );
             local_dynlib_filepaths.push(dst);
             dynlib_filenames.push(file.clone());
+            log!("Dynamic library found in {src:?}");
         }
     }
     if local_dynlib_filepaths.is_empty() {
@@ -244,19 +289,22 @@ pub fn build(
         dynlib_filenames,
     };
     build_info.to_dir(&build_info_dir);
-    Ok(build_info)
+    build_info
 }
 
-fn download_file(url: &str, output_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn download_file(url: &str, output_path: &str) {
     // Create a temporary directory
     let temp_dir = env::temp_dir();
-    fs::create_dir_all(&temp_dir)?;
+    must!(fs::create_dir_all(&temp_dir), "Error creating {temp_dir:?}");
     let temp_file_path = temp_dir.join("temp_download_file");
 
     // Send the GET request
-    let mut response = reqwest::blocking::get(url)?;
+    let mut response = must!(
+        reqwest::blocking::get(url),
+        "Error performing GET operation to {url}"
+    );
     if !response.status().is_success() {
-        return Err(format!("Failed to download file: HTTP {}", response.status()).into());
+        panic!("Failed to download file: HTTP {}", response.status());
     }
 
     // Get the content length, if available
@@ -266,22 +314,32 @@ fn download_file(url: &str, output_path: &str) -> Result<(), Box<dyn std::error:
     let pb = ProgressBar::new(total_size);
     pb.set_style(
         ProgressStyle::default_bar()
-            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")?
+            .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
+            .unwrap()
             .progress_chars("#>-"),
     );
 
     // Write to a temporary file while updating progress
-    let mut temp_file = File::create(&temp_file_path)?;
+    let mut temp_file = must!(
+        File::create(&temp_file_path),
+        "Error creating temp file for storing the downloaded results in {temp_file_path:?}"
+    );
     let mut buffer = [0; 8192]; // 8 KB buffer
     let mut downloaded = 0;
 
     loop {
-        let bytes_read = response.read(&mut buffer)?;
+        let bytes_read = must!(
+            response.read(&mut buffer),
+            "Error reading response into buffer"
+        );
         if bytes_read == 0 {
             break; // EOF reached
         }
 
-        temp_file.write_all(&buffer[..bytes_read])?;
+        must!(
+            temp_file.write_all(&buffer[..bytes_read]),
+            "Error writing to temp file"
+        );
         downloaded += bytes_read as u64;
         pb.set_position(downloaded);
     }
@@ -294,18 +352,25 @@ fn download_file(url: &str, output_path: &str) -> Result<(), Box<dyn std::error:
 
     // Copy the downloaded file to the final output path
     let output_path = Path::new(output_path);
-    fs::create_dir_all(output_path.parent().unwrap_or_else(|| Path::new("")))?;
-    fs::copy(&temp_file_path, &output_path)?;
+    must!(
+        fs::create_dir_all(output_path.parent().unwrap_or_else(|| Path::new(""))),
+        "Error creating {output_path:?} for storing the downloaded file"
+    );
+    must!(
+        fs::copy(&temp_file_path, &output_path),
+        "Error copying downloaded file from {temp_file_path:?} {output_path:?}"
+    );
 
     // Optionally remove the temporary file (if needed)
-    fs::remove_file(temp_file_path)?;
-
-    Ok(())
+    let _ = fs::remove_file(temp_file_path);
 }
 
-fn extract_tar_gz(archive_path: &str, output_dir: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn extract_tar_gz(archive_path: &str, output_dir: &str) {
     // Open the .tar.gz file
-    let tar_gz = File::open(archive_path)?;
+    let tar_gz = must!(
+        File::open(archive_path),
+        "Error opening tar file {archive_path:?}"
+    );
     let buf_reader = BufReader::new(tar_gz);
 
     // Create a GzDecoder to handle the .gz compression
@@ -315,11 +380,14 @@ fn extract_tar_gz(archive_path: &str, output_dir: &str) -> Result<(), Box<dyn st
     let mut archive = Archive::new(gz_decoder);
 
     // First pass: count the number of entries
-    let entries_count = archive.entries()?.count();
+    let entries_count = must!(archive.entries(), "Error retrieving entries from tar file").count();
     drop(archive); // Drop the archive to reset the iterator
 
     // Reopen the archive for extraction
-    let tar_gz = File::open(archive_path)?;
+    let tar_gz = must!(
+        File::open(archive_path),
+        "Error opening tar file {archive_path:?}"
+    );
     let buf_reader = BufReader::new(tar_gz);
     let gz_decoder = GzDecoder::new(buf_reader);
     let mut archive = Archive::new(gz_decoder);
@@ -330,30 +398,35 @@ fn extract_tar_gz(archive_path: &str, output_dir: &str) -> Result<(), Box<dyn st
         ProgressStyle::default_bar()
             .template(
                 "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
-            )?
+            )
+            .unwrap()
             .progress_chars("#>-"),
     );
 
     // Extract each entry and update the progress bar
-    for (index, entry) in archive.entries()?.enumerate() {
-        let mut entry = entry?;
-        entry.unpack_in(output_dir)?;
+    for (index, entry) in archive.entries().unwrap().enumerate() {
+        let mut entry = entry.unwrap();
+        must!(
+            entry.unpack_in(output_dir),
+            "Error unpacking {index} of tar file into {output_dir:?}"
+        );
         pb.set_position((index + 1) as u64);
     }
 
     // Finish the progress bar
     pb.finish_with_message("Extraction complete!");
-
-    Ok(())
 }
 
-fn run_command_with_output(cmd: &mut Command) -> std::io::Result<()> {
+fn run_command_with_output(cmd: &mut Command) {
     // Configure the command to pipe stdout and stderr
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
 
     // Spawn the command
-    let mut child = cmd.spawn()?;
+    let mut child = must!(
+        cmd.spawn(),
+        "Error spawning child process with command {cmd:?}"
+    );
 
     // Get stdout and stderr streams
     let stdout = child.stdout.take().expect("Failed to capture stdout");
@@ -379,20 +452,15 @@ fn run_command_with_output(cmd: &mut Command) -> std::io::Result<()> {
     });
 
     // Wait for the command to finish
-    let status = child.wait()?;
+    let status = must!(child.wait(), "Error waiting for child process to finish");
 
     // Wait for the threads to finish
     stdout_thread.join().expect("Failed to join stdout thread");
     stderr_thread.join().expect("Failed to join stderr thread");
 
     if !status.success() {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Command failed with status: {}", status),
-        ));
+        panic!("Command failed with status: {}", status);
     }
-
-    Ok(())
 }
 
 fn file_exists<P: AsRef<Path>>(path: P) -> bool {
@@ -425,11 +493,10 @@ mod tests {
 
     #[test]
     #[ignore]
-    fn test_build() -> Result<(), Box<dyn std::error::Error>> {
-        let mut p = PathBuf::from(env::current_dir()?);
+    fn test_build() {
+        let mut p = PathBuf::from(env::current_dir().unwrap());
         p.pop();
         p.push("target");
-        build(p, vec![])?;
-        Ok(())
+        build(p, vec![]);
     }
 }

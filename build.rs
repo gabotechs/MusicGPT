@@ -33,7 +33,7 @@ mod build {
             Err(_) => PathBuf::from(manifest_dir).join("target"),
         };
 
-        let info = build_system::build(dir, accelerators)?;
+        let info = build_system::build(dir, accelerators);
         info.write_build_info();
         Ok(())
     }
