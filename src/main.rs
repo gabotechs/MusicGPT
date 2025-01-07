@@ -311,9 +311,7 @@ async fn lookup_dyn_onnxruntime_lib() -> anyhow::Result<PathBuf> {
     // If not running with cargo, this will not be set.
     for local_filepath in LOCAL_DYNLIB_FILEPATHS {
         if local_filepath.ends_with(&MAIN_DYNLIB_FILENAME)
-            && tokio::fs::try_exists(&local_filepath)
-                .await
-                .unwrap_or(false)
+            && tokio::fs::try_exists(&local_filepath).await?
         {
             return Ok(PathBuf::from(local_filepath));
         }
@@ -336,9 +334,13 @@ async fn lookup_dyn_onnxruntime_lib() -> anyhow::Result<PathBuf> {
         "Dynamic libraries downloaded",
     )
     .await?;
-    Ok(PROJECT_FS.path_buf(&format!(
+    let main_dynlib_file = PROJECT_FS.path_buf(&format!(
         "dynlibs/{ONNXRUNTIME_VERSION}/{MAIN_DYNLIB_FILENAME}"
-    )))
+    ));
+    if !tokio::fs::try_exists(&main_dynlib_file).await? {
+        return Err(anyhow::anyhow!("dynamic library file {main_dynlib_file:?} not found"))
+    }
+    Ok(main_dynlib_file)
 }
 
 fn init_gpu() -> anyhow::Result<(&'static str, ExecutionProviderDispatch)> {
