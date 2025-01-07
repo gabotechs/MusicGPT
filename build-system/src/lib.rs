@@ -124,6 +124,7 @@ impl BuildInfo {
     /// Dumps the BuildInfo into out dir.
     fn to_dir(&self, dir: &PathBuf) {
         let file = dir.join("onnxruntime-build-info.json");
+        log!("writing BuildInfo to {file:?}");
         must!(
             fs::write(
                 &file,
