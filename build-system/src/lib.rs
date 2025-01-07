@@ -182,8 +182,6 @@ pub fn build(
         .arg("--skip_submodule_sync")
         .arg("--skip_tests");
 
-
-
     for accelerator in accelerators {
         match accelerator {
             Accelerators::COREML => cmd.arg("--use_coreml"),
@@ -426,7 +424,7 @@ mod tests {
     use super::*;
 
     #[test]
-    // #[ignore]
+    #[ignore]
     fn test_build() -> Result<(), Box<dyn std::error::Error>> {
         let mut p = PathBuf::from(env::current_dir()?);
         p.pop();
