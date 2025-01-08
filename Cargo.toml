@@ -68,4 +68,4 @@ onnxruntime-from-cdn = ["ort/copy-dylibs", "ort/download-binaries"]
 
 [build-dependencies]
 built = "0.7.5"
-build-system = { path = "./build-system" }
+build-system = { path = "./build-system", optional = true }
