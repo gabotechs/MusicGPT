@@ -41,8 +41,5 @@ runs:
 
     - uses: actions/cache@v4
       with:
-        key: ${{ runner.os }}-${{ runner.arch }}-onnxruntime-${{ hashFiles('.onnxruntime/**/*') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ runner.arch }}-onnxruntime-
-          ${{ runner.os }}-
+        key: ${{ runner.os }}-${{ runner.arch }}-onnxruntime
         path: .onnxruntime
