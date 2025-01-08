@@ -227,8 +227,8 @@ pub fn build(dir: PathBuf, accelerators: Vec<Accelerators>) -> BuildInfo {
     }
 
     log!("build command is: {cmd:?}");
-    let build_key = calculate_hash(&format!("{ONNX_RELEASE}{PROFILE}{cmd:?}"));
-    let build_info_dir = dir.join(&build_key);
+    let cmd_hash = calculate_hash(&format!("{cmd:?}"));
+    let build_info_dir = dir.join(&cmd_hash);
     must!(
         fs::create_dir_all(&build_info_dir),
         "Failed to create directory: {build_info_dir:?}"
@@ -295,7 +295,7 @@ pub fn build(dir: PathBuf, accelerators: Vec<Accelerators>) -> BuildInfo {
         dynlib_filenames,
     };
     must!(
-        fs::write(dir.join(CACHE_KEY_FILENAME), build_key),
+        fs::write(dir.join(CACHE_KEY_FILENAME), cmd_hash),
         "Error writing cache key file {CACHE_KEY_FILENAME}"
     );
     build_info.to_dir(&build_info_dir);
