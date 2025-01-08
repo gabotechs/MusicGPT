@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: cargo test -vv --no-default-features --features onnxruntime-from-source
+      - run: cargo test --no-default-features --features onnxruntime-from-source
 
   smoke-test:
     strategy:
