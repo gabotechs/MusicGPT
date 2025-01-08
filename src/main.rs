@@ -331,7 +331,7 @@ async fn lookup_dyn_onnxruntime_lib() -> anyhow::Result<PathBuf> {
         remote_file_spec,
         false,
         &format!("Dynamic libraries not found in path set by ONNXRUNTIME_LOCAL_FILES env variable. Downloading them from GitHub release {PKG_VERSION}..."),
-        "Dynamic libraries downloaded successfully",
+        "Dynamic libraries downloaded",
     )
     .await?;
     let main_dynlib_file = PROJECT_FS.path_buf(&format!(
