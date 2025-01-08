@@ -28,6 +28,8 @@ const DYN_LIB_EXT: &str = "so";
 #[cfg(target_os = "linux")]
 const MAIN_DYNLIB_FILENAME: &str = "libonnxruntime.so";
 
+const BUILD_HASH_FILE_ENV: &str = "BUILD_HASH_FILE";
+
 pub enum Accelerators {
     COREML,
     TENSORRT,
@@ -114,7 +116,7 @@ impl BuildInfo {
                 Err(_) => {
                     log!("Failed to parse build info, assuming as if it was not there");
                     None
-                },
+                }
             }
         } else {
             None
@@ -225,7 +227,8 @@ pub fn build(dir: PathBuf, accelerators: Vec<Accelerators>) -> BuildInfo {
     }
 
     log!("build command is: {cmd:?}");
-    let build_info_dir = dir.join(calculate_hash(&format!("{cmd:?}")));
+    let cmd_hash = calculate_hash(format!("{cmd:?}"));
+    let build_info_dir = dir.join(&cmd_hash);
     must!(
         fs::create_dir_all(&build_info_dir),
         "Failed to create directory: {build_info_dir:?}"
@@ -239,7 +242,9 @@ pub fn build(dir: PathBuf, accelerators: Vec<Accelerators>) -> BuildInfo {
             log!("BuildInfo exists on {build_info_dir:?}, but its referencing dynamic library files do not exist");
         }
     } else {
-        log!("BuildInfo not found in {build_info_dir:?}, compiling onnxruntime project from source");
+        log!(
+            "BuildInfo not found in {build_info_dir:?}, compiling onnxruntime project from source"
+        );
     }
 
     if !file_exists(tar_gz) {
@@ -290,6 +295,12 @@ pub fn build(dir: PathBuf, accelerators: Vec<Accelerators>) -> BuildInfo {
         dynlib_filenames,
     };
     build_info.to_dir(&build_info_dir);
+    if let Ok(file) = env::var(BUILD_HASH_FILE_ENV) {
+        must!(
+            fs::write(PathBuf::from(&file), cmd_hash),
+            "Cannot write build hash to {file}"
+        )
+    }
     build_info
 }
 
@@ -476,12 +487,12 @@ fn dir_exists<P: AsRef<Path>>(path: P) -> bool {
         .unwrap_or(false)
 }
 
-fn calculate_hash(input: &str) -> String {
+fn calculate_hash(input: impl Display) -> String {
     // Create a Sha256 object
     let mut hasher = DefaultHasher::new();
 
     // Write input data
-    hasher.write(input.as_ref());
+    hasher.write(input.to_string().as_ref());
 
     // Read hash digest and convert to hex
     let result = hasher.finish();
