@@ -28,6 +28,8 @@ const DYN_LIB_EXT: &str = "so";
 #[cfg(target_os = "linux")]
 const MAIN_DYNLIB_FILENAME: &str = "libonnxruntime.so";
 
+const CACHE_KEY_FILENAME: &str = "cache-key.txt";
+
 pub enum Accelerators {
     COREML,
     TENSORRT,
@@ -114,7 +116,7 @@ impl BuildInfo {
                 Err(_) => {
                     log!("Failed to parse build info, assuming as if it was not there");
                     None
-                },
+                }
             }
         } else {
             None
@@ -225,7 +227,8 @@ pub fn build(dir: PathBuf, accelerators: Vec<Accelerators>) -> BuildInfo {
     }
 
     log!("build command is: {cmd:?}");
-    let build_info_dir = dir.join(calculate_hash(&format!("{cmd:?}")));
+    let cmd_hash = calculate_hash(&format!("{cmd:?}"));
+    let build_info_dir = dir.join(&cmd_hash);
     must!(
         fs::create_dir_all(&build_info_dir),
         "Failed to create directory: {build_info_dir:?}"
@@ -239,7 +242,9 @@ pub fn build(dir: PathBuf, accelerators: Vec<Accelerators>) -> BuildInfo {
             log!("BuildInfo exists on {build_info_dir:?}, but its referencing dynamic library files do not exist");
         }
     } else {
-        log!("BuildInfo not found in {build_info_dir:?}, compiling onnxruntime project from source");
+        log!(
+            "BuildInfo not found in {build_info_dir:?}, compiling onnxruntime project from source"
+        );
     }
 
     if !file_exists(tar_gz) {
@@ -289,6 +294,10 @@ pub fn build(dir: PathBuf, accelerators: Vec<Accelerators>) -> BuildInfo {
         main_dynlib_filename: MAIN_DYNLIB_FILENAME.to_string(),
         dynlib_filenames,
     };
+    must!(
+        fs::write(dir.join(CACHE_KEY_FILENAME), cmd_hash),
+        "Error writing cache key file {CACHE_KEY_FILENAME}"
+    );
     build_info.to_dir(&build_info_dir);
     build_info
 }
