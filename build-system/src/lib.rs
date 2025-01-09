@@ -228,6 +228,12 @@ pub fn build(dir: PathBuf, accelerators: Vec<Accelerators>) -> BuildInfo {
 
     log!("build command is: {cmd:?}");
     let cmd_hash = calculate_hash(format!("{cmd:?}"));
+    if let Ok(file) = env::var(BUILD_HASH_FILE_ENV) {
+        must!(
+            fs::write(PathBuf::from(&file), &cmd_hash),
+            "Cannot write build hash to {file}"
+        )
+    }
     let build_info_dir = dir.join(&cmd_hash);
     must!(
         fs::create_dir_all(&build_info_dir),
@@ -295,12 +301,6 @@ pub fn build(dir: PathBuf, accelerators: Vec<Accelerators>) -> BuildInfo {
         dynlib_filenames,
     };
     build_info.to_dir(&build_info_dir);
-    if let Ok(file) = env::var(BUILD_HASH_FILE_ENV) {
-        must!(
-            fs::write(PathBuf::from(&file), cmd_hash),
-            "Cannot write build hash to {file}"
-        )
-    }
     build_info
 }
 

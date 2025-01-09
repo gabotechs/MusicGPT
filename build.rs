@@ -18,6 +18,7 @@ mod build {
         println!("cargo:rerun-if-env-changed=CARGO_FEATURE_TENSORRT");
         println!("cargo:rerun-if-env-changed=CARGO_FEATURE_CUDA");
         println!("cargo:rerun-if-env-changed=ONNXRUNTIME_BUILD_DIR");
+        println!("cargo:rerun-if-env-changed=BUILD_HASH_FILE");
         let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
         #[allow(unused_mut)]
         let mut accelerators = vec![];
