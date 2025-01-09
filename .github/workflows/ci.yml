@@ -163,6 +163,9 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           targets: ${{ matrix.target }}
+      # need to re-bump again, otherwise the version in Cargo.toml will be the previous one
+      - run: cargo install cargo-release
+      - run: cargo release version $(.github/semver.sh) -x --no-confirm
       - run: cargo build --no-default-features --release --target ${{ matrix.target }} --features onnxruntime-from-source
         env:
           BUILD_HASH_FILE: 'build-hash.txt'
