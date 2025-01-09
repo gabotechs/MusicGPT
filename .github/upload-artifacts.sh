@@ -25,6 +25,7 @@ else
   echo "Binary found in $RELEASE_DIR/$BIN"
 fi
 
+ls $RELEASE_DIR
 echo "Moving $RELEASE_DIR/$BIN to $BIN-$TARGET..."
 mv "$RELEASE_DIR/$BIN" "$BIN-$TARGET"
 echo "Upload $BIN-$TARGET file to github release v$VERSION..."
