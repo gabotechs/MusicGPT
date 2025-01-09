@@ -295,18 +295,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "build-system"
-version = "0.1.0"
-dependencies = [
- "flate2",
- "indicatif",
- "reqwest",
- "serde",
- "serde_json",
- "tar",
-]
-
-[[package]]
 name = "built"
 version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1471,12 +1459,12 @@ dependencies = [
  "async-stream",
  "async-trait",
  "axum",
- "build-system",
  "built",
  "chrono",
  "clap",
  "cpal",
  "directories",
+ "flate2",
  "futures-util",
  "half",
  "hostname",
@@ -1496,6 +1484,7 @@ dependencies = [
  "serde",
  "serde_json",
  "specta",
+ "tar",
  "text_io",
  "time",
  "tokenizers",

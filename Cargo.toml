@@ -9,11 +9,6 @@ readme = "README.md"
 repository = "https://github.com/gabotechs/MusicGPT"
 authors = ["gb.mt.me@gmail.com"]
 
-[workspace]
-members = [
-    "build-system"
-]
-
 [dependencies]
 openssl = { version = "0.10.59", features = ["vendored"] } # NOTE: neeeded for cross compilations
 clap = { version = "4.5.4", features = ["derive"] }
@@ -57,9 +52,7 @@ scopeguard = "1.2.0"
 time = "0.3.36"
 
 [features]
-default = [
-    "onnxruntime-from-cdn"
-]
+default = ["onnxruntime-from-cdn"]
 coreml = ["ort/coreml"]
 tensorrt = ["ort/tensorrt"]
 cuda = ["ort/cuda"]
@@ -68,4 +61,9 @@ onnxruntime-from-cdn = ["ort/copy-dylibs", "ort/download-binaries"]
 
 [build-dependencies]
 built = "0.7.5"
-build-system = { path = "./build-system" }
+reqwest = { version = "0.12.12", features = ["blocking"] }
+flate2 = "1.0"
+tar = "0.4"
+indicatif = "0.17.9"
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.134"
