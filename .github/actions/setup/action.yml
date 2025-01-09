@@ -24,10 +24,8 @@ runs:
         components: ${{ inputs.components }}
 
     - if: runner.os == 'Linux'
-      uses: awalsh128/cache-apt-pkgs-action@latest
-      with:
-        packages: librust-alsa-sys-dev
-        version: 1.0
+      run: sudo apt-get install -y librust-alsa-sys-dev
+      shell: bash
 
     - if: runner.os == 'Windows'
       shell: powershell
