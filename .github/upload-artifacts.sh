@@ -11,19 +11,31 @@ RELEASE_DIR=target/release
 BUILD_HASH=$(cat $BUILD_HASH_FILE)
 
 if [ ! -f $RELEASE_DIR/$BIN ]; then
-  echo "No binary found in $RELEASE_DIR/$BIN, searching somewhere else..."
-  RELEASE_DIR=target/$TARGET/release
-fi
-if [ ! -f $RELEASE_DIR/$BIN ]; then
   echo "No binary found in $RELEASE_DIR/$BIN"
-  exit 1
+  RELEASE_DIR=target/$TARGET/release
+  echo "Searching for $RELEASE_DIR/$BIN instead..."
+else
+  echo "Binary found in $RELEASE_DIR/$BIN"
 fi
-mv $RELEASE_DIR/$BIN $BIN-$TARGET
-gh release upload v$VERSION $BIN-$TARGET
 
-pushd $ONNXRUNTIME_BUILD_DIR/$BUILD_HASH >/dev/null
+if [ ! -f $RELEASE_DIR/$BIN ]; then
+  echo "No binary found in $RELEASE_DIR/$BIN, aborting"
+  exit 1
+else
+  echo "Binary found in $RELEASE_DIR/$BIN"
+fi
+
+echo "Moving $RELEASE_DIR/$BIN to $BIN-$TARGET..."
+mv "$RELEASE_DIR/$BIN" "$BIN-$TARGET"
+echo "Upload $BIN-$TARGET file to github release v$VERSION..."
+gh release upload "v$VERSION" "$BIN-$TARGET"
+
+pushd "$ONNXRUNTIME_BUILD_DIR/$BUILD_HASH" >/dev/null
 for file in $(ls *.{so,dylib,dll} 2> /dev/null); do
-  mv $file $TARGET-$file
-  gh release upload v$VERSION $TARGET-$file
+  echo "Moving $file to $TARGET-$file..."
+  mv "$file" "$TARGET-$file"
+  echo "Uploading $TARGET-$file to github release v$VERSION..."
+  gh release upload "v$VERSION" "$TARGET-$file"
 done
+echo "Done!"
 popd >/dev/null
