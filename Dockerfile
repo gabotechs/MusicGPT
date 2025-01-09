@@ -1,4 +1,4 @@
-FROM nvidia/cuda:11.6.1-cudnn8-devel-ubuntu20.04 as builder
+FROM nvidia/cuda:12.6.2-cudnn-runtime-ubuntu24.04 as builder
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install deps
@@ -21,12 +21,12 @@ RUN cargo build --features cuda --release
 # bundle the shared libraries in lib/ folder
 RUN mkdir lib
 RUN \
-for file in target/release/*.so*; do \
+for file in $(ls target/release/*.so); do \
   name=${file##*/}; \
   cp $(readlink $file) lib/$name; \
 done
 
-FROM nvidia/cuda:11.6.1-cudnn8-devel-ubuntu20.04 as runner
+FROM nvidia/cuda:12.6.2-cudnn-runtime-ubuntu24.04 as runner
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt update && apt install librust-alsa-sys-dev ca-certificates -y
