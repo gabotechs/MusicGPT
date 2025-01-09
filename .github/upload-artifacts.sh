@@ -26,7 +26,7 @@ else
 fi
 
 echo "Moving $RELEASE_DIR/$BIN to $BIN-$TARGET..."
-mv "$RELEASE_DIR/$BIN" "$BIN-$TARGET"
+cp "$RELEASE_DIR/$BIN" "$BIN-$TARGET"
 echo "Upload $BIN-$TARGET file to github release v$VERSION..."
 gh release upload "v$VERSION" "$BIN-$TARGET"
 
