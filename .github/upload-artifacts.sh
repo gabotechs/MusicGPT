@@ -25,12 +25,15 @@ else
   echo "Binary found in $RELEASE_DIR/$BIN"
 fi
 
-ls $RELEASE_DIR
 echo "Moving $RELEASE_DIR/$BIN to $BIN-$TARGET..."
 mv "$RELEASE_DIR/$BIN" "$BIN-$TARGET"
 echo "Upload $BIN-$TARGET file to github release v$VERSION..."
-ls
-gh release upload "v$VERSION" "$BIN-$TARGET"
+
+if [  -f "$BIN-$TARGET.exe" ]; then
+  gh release upload "v$VERSION" "$BIN-$TARGET.exe"
+else
+  gh release upload "v$VERSION" "$BIN-$TARGET"
+fi
 
 pushd "$ONNXRUNTIME_BUILD_DIR/$BUILD_HASH" >/dev/null
 for file in $(ls *.{so,dylib,dll} 2> /dev/null); do
