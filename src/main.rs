@@ -322,6 +322,8 @@ async fn lookup_dyn_onnxruntime_lib() -> anyhow::Result<PathBuf> {
         .iter()
         .map(|v| {
             (
+                // It's very important that the remote filename matches what the pipelines upload here:
+                // https://github.com/gabotechs/MusicGPT/blob/main/.github/workflows/ci.yml#L188
                 format!("{PKG_REPOSITORY}/releases/download/v{PKG_VERSION}/{TARGET}-{v}"),
                 format!("dynlibs/{ONNXRUNTIME_VERSION}/{v}"),
             )
