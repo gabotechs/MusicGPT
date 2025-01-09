@@ -60,6 +60,7 @@ onnxruntime-from-source = ["ort/load-dynamic"]
 onnxruntime-from-cdn = ["ort/copy-dylibs", "ort/download-binaries"]
 
 [build-dependencies]
+openssl = { version = "0.10.59", features = ["vendored"] } # NOTE: neeeded for cross compilations
 built = "0.7.5"
 reqwest = { version = "0.12.12", features = ["blocking"] }
 flate2 = "1.0"
