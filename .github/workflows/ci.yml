@@ -158,24 +158,34 @@ jobs:
             dynlib_ext: dll
 
     runs-on: ${{ matrix.os }}
+    env:
+      BUILD_HASH_FILE: 'build-hash.txt'
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
         with:
           targets: ${{ matrix.target }}
+
+      # Need to set the version manually here, even if it was set in the "tag" job before, that change
+      # does not propagate to further jobs.
       - if: runner.os == 'macOS'
         run: sed -i '' 's/^version = ".*"/version = "${{ needs.tag.outputs.version }}"/' Cargo.toml
       - if: runner.os != 'macOS'
         run: sed -i 's/^version = ".*"/version = "${{ needs.tag.outputs.version }}"/' Cargo.toml
+
       - run: cargo build --no-default-features --release --target ${{ matrix.target }} --features onnxruntime-from-source
-        env:
-          BUILD_HASH_FILE: 'build-hash.txt'
       - run: |
-          ./.github/bundle-release.sh ${{ matrix.target }}
-          gh release upload v${{ needs.tag.outputs.version }} ${{ matrix.target }}.tar.gz
+          BIN=musicgpt
+          RELEASE_DIR=target/release
+          BUILD_HASH=$(cat ${{ env.BUILD_HASH_FILE }})
           
-          build_hash=$(cat build-hash.txt)
-          pushd ${{ env.ONNXRUNTIME_BUILD_DIR }}/$build_hash >/dev/null
+          if [ ! -f $RELEASE_DIR/$BIN ]; then
+            RELEASE_DIR=target/${{ matrix.target }}/release
+          fi
+          mv $RELEASE_DIR/$BIN $BIN-${{ matrix.target }}
+          gh release upload v${{ needs.tag.outputs.version }} $BIN-${{ matrix.target }}
+          
+          pushd ${{ env.ONNXRUNTIME_BUILD_DIR }}/$BUILD_HASH >/dev/null
           for file in $(ls *.${{ matrix.dynlib_ext }}); do
             mv $file ${{ matrix.target }}-$file
             gh release upload v${{ needs.tag.outputs.version }} ${{ matrix.target }}-$file
