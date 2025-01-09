@@ -163,7 +163,10 @@ jobs:
       - uses: ./.github/actions/setup
         with:
           targets: ${{ matrix.target }}
-      - run: sed -i '' 's/^version = ".*"/version = "${{ needs.tag.outputs.version }}"/' Cargo.toml
+      - if: runner.os == 'macOS'
+        run: sed -i '' 's/^version = ".*"/version = "${{ needs.tag.outputs.version }}"/' Cargo.toml
+      - if: runner.os != 'macOS'
+        run: sed -i 's/^version = ".*"/version = "${{ needs.tag.outputs.version }}"/' Cargo.toml
       - run: cargo build --no-default-features --release --target ${{ matrix.target }} --features onnxruntime-from-source
         env:
           BUILD_HASH_FILE: 'build-hash.txt'
