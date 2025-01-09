@@ -149,13 +149,10 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            dynlib_ext: so
           - os: macos-latest
             target: aarch64-apple-darwin
-            dynlib_ext: dylib
           - os: windows-2022
             target: x86_64-pc-windows-msvc
-            dynlib_ext: dll
 
     runs-on: ${{ matrix.os }}
     env:
@@ -174,22 +171,5 @@ jobs:
         run: sed -i 's/^version = ".*"/version = "${{ needs.tag.outputs.version }}"/' Cargo.toml
 
       - run: cargo build --no-default-features --release --target ${{ matrix.target }} --features onnxruntime-from-source
-      - run: |
-          BIN=musicgpt
-          RELEASE_DIR=target/release
-          BUILD_HASH=$(cat ${{ env.BUILD_HASH_FILE }})
-          
-          if [ ! -f $RELEASE_DIR/$BIN ]; then
-            RELEASE_DIR=target/${{ matrix.target }}/release
-          fi
-          mv $RELEASE_DIR/$BIN $BIN-${{ matrix.target }}
-          gh release upload v${{ needs.tag.outputs.version }} $BIN-${{ matrix.target }}
-          
-          pushd ${{ env.ONNXRUNTIME_BUILD_DIR }}/$BUILD_HASH >/dev/null
-          for file in $(ls *.${{ matrix.dynlib_ext }}); do
-            mv $file ${{ matrix.target }}-$file
-            gh release upload v${{ needs.tag.outputs.version }} ${{ matrix.target }}-$file
-          done
-          popd >/dev/null
-
+      - run: .github/upload-artifacts.sh ${{ matrix.target }} ${{ needs.tag.outputs.version }}
         shell: bash
