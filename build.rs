@@ -1,4 +1,5 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-env-changed=CARGO_FEATURE_ONNXRUNTIME_FROM_SOURCE");
     build::build()?;
     built::write_built_file()?;
