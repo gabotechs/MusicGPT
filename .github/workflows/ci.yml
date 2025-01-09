@@ -173,7 +173,8 @@ jobs:
           build_hash=$(cat build-hash.txt)
           pushd ${{ env.ONNXRUNTIME_BUILD_DIR }}/$build_hash >/dev/null
           for file in $(ls *.${{ matrix.dynlib_ext }}); do
-             gh release upload v${{ needs.tag.outputs.version }} ${{ matrix.target }}-$file
+            mv $file ${{ matrix.target }}-$file
+            gh release upload v${{ needs.tag.outputs.version }} ${{ matrix.target }}-$file
           done
           popd >/dev/null
 
