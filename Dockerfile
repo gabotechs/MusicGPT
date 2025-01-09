@@ -11,7 +11,6 @@ WORKDIR /usr/src
 RUN cargo new musicgpt
 WORKDIR /usr/src/musicgpt
 COPY Cargo.toml Cargo.lock ./
-COPY build-system/Cargo.toml ./build-system/Cargo.toml
 RUN cargo build --features cuda --release
 
 # Compile the code.
