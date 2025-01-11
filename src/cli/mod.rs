@@ -3,7 +3,6 @@ mod onnxruntime_lib;
 
 mod download;
 mod gpu;
-mod loading_bar;
 mod musicgen_models;
 mod storage_ext;
 
@@ -11,15 +10,12 @@ use anyhow::anyhow;
 use clap::{Parser, ValueEnum};
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
-use regex::Regex;
 use std::fmt::{Display, Formatter};
-use std::str::FromStr;
-use text_io::read;
 use tracing::warn;
 
-use crate::audio::*;
 use crate::backend::*;
 use crate::storage::*;
+use crate::terminal::{run_terminal_loop, RunTerminalOptions};
 
 pub const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
 
@@ -125,6 +121,11 @@ impl Args {
         if self.secs > 30 {
             return Err(anyhow!("--secs must <= 30"));
         }
+        if self.no_interactive && self.prompt.is_empty() {
+            return Err(anyhow!(
+                "A prompt must be provided when not in interactive mode"
+            ));
+        }
         Ok(())
     }
 }
@@ -165,7 +166,7 @@ pub async fn cli() -> anyhow::Result<()> {
             &PROJECT_FS.root,
             PROJECT_FS.clone(),
             musicgen_models,
-            RunOptions {
+            RunWebServerOptions {
                 name: args.model.to_string(),
                 device: device.to_string(),
                 port: args.ui_port,
@@ -175,74 +176,18 @@ pub async fn cli() -> anyhow::Result<()> {
         )
         .await
     } else {
-        let secs_re = Regex::new("--secs[ =](\\d+)")?;
-        let output_re = Regex::new(r"--output[ =]([.a-zA-Z_-]+)")?;
-
-        fn capture<T: FromStr>(re: &Regex, text: &str) -> Option<T> {
-            if let Some(Some(capture)) = re.captures(text).map(|c| c.get(1)) {
-                if let Ok(v) = T::from_str(capture.as_str()) {
-                    return Some(v);
-                }
-            }
-            None
-        }
-
-        let audio_player = AudioManager::default();
-        // This variable holds the audio stream. The stream stops when this is dropped,
-        // so we need to maintain it referenced here.
-        #[allow(unused_variables)]
-        let mut curr_stream: Option<AudioStream> = None;
-        let mut prompt = args.prompt.clone();
-        let mut secs = args.secs;
-        let mut output = args.output.clone();
-
-        loop {
-            if prompt.is_empty() {
-                if args.no_interactive {
-                    return Err(anyhow!(
-                        "A prompt must be provided when not in interactive mode"
-                    ));
-                }
-                print!(">>> ");
-                prompt = read!("{}\n");
-                if prompt == "exit" {
-                    return Ok(());
-                }
-                secs = capture(&secs_re, &prompt).unwrap_or(secs);
-                output = capture(&output_re, &prompt).unwrap_or(output);
-            }
-
-            let bar = loading_bar::LoadingBarFactory::bar("Generating audio");
-            let samples = musicgen_models.process(
-                &prompt,
-                secs,
-                Box::new(move |elapsed, total| {
-                    bar.update_elapsed_total(elapsed as usize, total as usize);
-                    false
-                }),
-            )?;
-
-            // Last, play the audio.
-            if !args.no_playback {
-                let samples_copy = samples.clone();
-                let stream = audio_player.play_from_queue(samples_copy);
-                #[allow(unused_assignments)]
-                if let Ok(stream) = stream {
-                    curr_stream = Some(stream);
-                }
-            }
-            if !output.ends_with(".wav") {
-                output += ".wav";
-            }
-            let bytes = audio_player.to_wav(samples)?;
-            tokio::fs::write(&output, bytes).await?;
-
-            prompt = "".into();
-            if args.no_interactive {
-                break;
-            }
-        }
-
-        Ok(())
+        run_terminal_loop(
+            &PROJECT_FS.root,
+            PROJECT_FS.clone(),
+            musicgen_models,
+            RunTerminalOptions {
+                init_prompt: args.prompt,
+                init_secs: args.secs,
+                init_output: args.output,
+                no_playback: args.no_playback,
+                no_interactive: args.no_interactive,
+            },
+        )
+        .await
     }
 }

@@ -16,7 +16,7 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::time::Duration;
 
-    use crate::backend::RunOptions;
+    use crate::backend::RunWebServerOptions;
     use crate::backend::_test_utils::DummyJobProcessor;
     use crate::backend::server::run_web_server;
     use crate::storage::AppFs;
@@ -26,7 +26,7 @@ mod tests {
     async fn spawn_dummy_server() -> anyhow::Result<()> {
         let storage = AppFs::new(Path::new("/tmp/dummy-server"));
         let processor = DummyJobProcessor::new(Duration::from_millis(100));
-        let options = RunOptions {
+        let options = RunWebServerOptions {
             device: "Cpu".to_string(),
             name: "Dummy".to_string(),
             port: 8642,

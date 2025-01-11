@@ -1,11 +1,3 @@
-use crate::backend::JobProcessor;
-use crate::cli::download::download_many;
-use crate::cli::loading_bar::LoadingBarFactory;
-use crate::cli::{Model, INPUT_IDS_BATCH_PER_SECOND};
-use crate::musicgen::{
-    MusicGenAudioEncodec, MusicGenDecoder, MusicGenMergedDecoder, MusicGenSplitDecoder,
-    MusicGenTextEncoder,
-};
 use half::f16;
 use ort::session::Session;
 use ort::value::DynValue;
@@ -13,7 +5,17 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
+use std::time::Duration;
+use indicatif::{ProgressBar, ProgressStyle};
 use tokenizers::Tokenizer;
+
+use crate::backend::JobProcessor;
+use crate::cli::download::download_many;
+use crate::cli::{Model, INPUT_IDS_BATCH_PER_SECOND};
+use crate::musicgen::{
+    MusicGenAudioEncodec, MusicGenDecoder, MusicGenMergedDecoder, MusicGenSplitDecoder,
+    MusicGenTextEncoder,
+};
 
 pub struct MusicGenModels {
     text_encoder: MusicGenTextEncoder,
@@ -290,7 +292,7 @@ async fn build_sessions(
         if file.extension() != Some("onnx".as_ref()) {
             continue;
         }
-        let bar = LoadingBarFactory::spinner(
+        let bar = spinner(
             format!("Loading {:?}...", file.file_name().unwrap_or_default()).as_str(),
         );
 
@@ -299,4 +301,12 @@ async fn build_sessions(
         results.push_back(result);
     }
     Ok(results)
+}
+
+pub fn spinner(msg: impl Into<String>) -> ProgressBar {
+    let pb = ProgressBar::new_spinner();
+    pb.enable_steady_tick(Duration::from_millis(120));
+    pb.set_style(ProgressStyle::with_template("{spinner:.blue} {msg}").unwrap());
+    pb.set_message(msg.into());
+    pb
 }

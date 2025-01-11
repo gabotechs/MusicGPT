@@ -8,6 +8,7 @@ mod backend;
 mod cli;
 mod musicgen;
 mod storage;
+mod terminal;
 
 #[tokio::main]
 async fn main() {

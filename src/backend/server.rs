@@ -12,7 +12,7 @@ use crate::backend::music_gpt_ws_handler::{Info, MusicGptWsHandler};
 use crate::backend::ws_handler::WsHandler;
 use crate::storage::Storage;
 
-pub struct RunOptions {
+pub struct RunWebServerOptions {
     pub name: String,
     pub device: String,
     pub port: usize,
@@ -24,7 +24,7 @@ pub async fn run_web_server<T, S, P>(
     root: P,
     storage: S,
     processor: T,
-    opts: RunOptions,
+    opts: RunWebServerOptions,
 ) -> anyhow::Result<()>
 where
     T: JobProcessor + 'static,
@@ -319,7 +319,7 @@ mod tests {
     ) -> anyhow::Result<(WebSocketStream<MaybeTlsStream<TcpStream>>, String)> {
         let app_fs = AppFs::new_tmp();
         let port = PORT.fetch_add(1, Ordering::SeqCst) as usize;
-        let run_options = RunOptions {
+        let run_options = RunWebServerOptions {
             name: "Dummy".to_string(),
             device: "Cpu".to_string(),
             port,
