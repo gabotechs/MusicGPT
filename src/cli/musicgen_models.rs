@@ -262,7 +262,7 @@ impl JobProcessor for MusicGenModels {
         &self,
         prompt: &str,
         secs: usize,
-        on_progress: Box<dyn Fn(f32) -> bool + Sync + Send + 'static>,
+        on_progress: Box<dyn Fn(f32, f32) -> bool + Sync + Send + 'static>,
     ) -> ort::Result<VecDeque<f32>> {
         let max_len = secs * INPUT_IDS_BATCH_PER_SECOND;
 
@@ -272,7 +272,7 @@ impl JobProcessor for MusicGenModels {
         let mut data = VecDeque::new();
         while let Ok(tokens) = token_stream.recv() {
             data.push_back(tokens?);
-            let should_exit = on_progress(data.len() as f32 / max_len as f32);
+            let should_exit = on_progress(data.len() as f32, max_len as f32);
             if should_exit {
                 return Err(ort::Error::new("Aborted"));
             }

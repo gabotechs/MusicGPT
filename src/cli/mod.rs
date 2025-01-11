@@ -12,7 +12,6 @@ use clap::{Parser, ValueEnum};
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
 use regex::Regex;
-use std::collections::VecDeque;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 use text_io::read;
@@ -179,6 +178,15 @@ pub async fn cli() -> anyhow::Result<()> {
         let secs_re = Regex::new("--secs[ =](\\d+)")?;
         let output_re = Regex::new(r"--output[ =]([.a-zA-Z_-]+)")?;
 
+        fn capture<T: FromStr>(re: &Regex, text: &str) -> Option<T> {
+            if let Some(Some(capture)) = re.captures(text).map(|c| c.get(1)) {
+                if let Ok(v) = T::from_str(capture.as_str()) {
+                    return Some(v);
+                }
+            }
+            None
+        }
+
         let audio_player = AudioManager::default();
         // This variable holds the audio stream. The stream stops when this is dropped,
         // so we need to maintain it referenced here.
@@ -200,37 +208,19 @@ pub async fn cli() -> anyhow::Result<()> {
                 if prompt == "exit" {
                     return Ok(());
                 }
-                if let Some(captures) = secs_re.captures(&prompt) {
-                    if let Some(capture) = captures.get(1) {
-                        if let Ok(s) = usize::from_str(capture.as_str()) {
-                            secs = s;
-                        }
-                    }
-                }
-                if let Some(captures) = output_re.captures(&prompt) {
-                    if let Some(capture) = captures.get(1) {
-                        if !capture.is_empty() {
-                            output = capture.as_str().to_string()
-                        }
-                    }
-                }
+                secs = capture(&secs_re, &prompt).unwrap_or(secs);
+                output = capture(&output_re, &prompt).unwrap_or(output);
             }
-            // First, encode the text.
-            let (last_hidden_state, attention_mask) = musicgen_models.encode_text(&prompt)?;
 
-            // Second, generate tokens.
-            let max_len = secs * INPUT_IDS_BATCH_PER_SECOND;
-            let token_stream =
-                musicgen_models.generate_tokens(last_hidden_state, attention_mask, max_len)?;
             let bar = loading_bar::LoadingBarFactory::bar("Generating audio");
-            let mut data = VecDeque::new();
-            while let Ok(tokens) = token_stream.recv() {
-                data.push_back(tokens?);
-                bar.update_elapsed_total(data.len(), max_len)
-            }
-
-            // Third, encode the tokens into audio.
-            let samples = musicgen_models.encode_audio(data)?;
+            let samples = musicgen_models.process(
+                &prompt,
+                secs,
+                Box::new(move |elapsed, total| {
+                    bar.update_elapsed_total(elapsed as usize, total as usize);
+                    false
+                }),
+            )?;
 
             // Last, play the audio.
             if !args.no_playback {

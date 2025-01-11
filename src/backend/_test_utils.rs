@@ -114,7 +114,7 @@ impl JobProcessor for DummyJobProcessor {
         &self,
         prompt: &str,
         secs: usize,
-        on_progress: Box<dyn Fn(f32) -> bool + Sync + Send + 'static>,
+        on_progress: Box<dyn Fn(f32, f32) -> bool + Sync + Send + 'static>,
     ) -> ort::Result<VecDeque<f32>> {
         let mut result = VecDeque::new();
         for i in 0..secs {
@@ -123,7 +123,7 @@ impl JobProcessor for DummyJobProcessor {
             }
             std::thread::sleep(self.wait_scale);
             result.push_back(i as f32);
-            let should_exit = on_progress(result.len() as f32 / secs as f32);
+            let should_exit = on_progress(result.len() as f32, secs as f32);
             if should_exit {
                 return Err(ort::Error::new("Aborted"));
             }
