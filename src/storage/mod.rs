@@ -1,6 +1,7 @@
 mod app_fs;
 
 pub use app_fs::*;
+use std::path::PathBuf;
 
 use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
@@ -23,6 +24,9 @@ pub trait Storage: Sync + Send + Clone {
     async fn mv(&self, from: &str, to: &str) -> std::io::Result<()>;
     async fn rm(&self, path: &str) -> std::io::Result<bool>;
     async fn rm_rf(&self, path: &str) -> std::io::Result<bool>;
+    fn path_buf(&self, path: &str) -> PathBuf {
+        PathBuf::from(path)
+    }
 }
 
 #[cfg(test)]

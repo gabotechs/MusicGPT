@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use futures_util::StreamExt;
 use tokio::io::AsyncWriteExt;
 
-use crate::storage::{AppFs, Storage};
+use crate::storage::Storage;
 
 /// Loads a remote from the local data directory, downloading it from
 /// the remote endpoint if necessary
@@ -18,8 +18,8 @@ use crate::storage::{AppFs, Storage};
 /// * `cbk`: A callback for tracking progress of the download (elapsed, total)
 ///
 /// returns: Result<PathBuf, Error>
-impl AppFs {
-    pub async fn fetch_remote_data_file<Cb: Fn(usize, usize)>(
+pub trait StorageExt: Storage {
+    async fn fetch_remote_data_file<Cb: Fn(usize, usize)>(
         &self,
         url: &str,
         local_file: &str,
@@ -35,7 +35,9 @@ impl AppFs {
         let resp = reqwest::get(url).await.map_err(io_err)?;
         let status_code = resp.status();
         if status_code != StatusCode::OK {
-            return Err(io_err(format!("Error downloading {url}. Invalid status code {status_code}")));
+            return Err(io_err(format!(
+                "Error downloading {url}. Invalid status code {status_code}"
+            )));
         }
         let total_bytes = resp.content_length().unwrap_or_default() as usize;
 
@@ -65,6 +67,8 @@ impl AppFs {
     }
 }
 
+impl<T: Storage> StorageExt for T {}
+
 fn io_err<E>(e: E) -> std::io::Error
 where
     E: Into<Box<dyn error::Error + Send + Sync>>,
@@ -74,12 +78,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    use rand::distributions::Alphanumeric;
+    use rand::{thread_rng, Rng};
     use std::path::Path;
     use std::time::SystemTime;
 
-    use rand::distributions::Alphanumeric;
-    use rand::{thread_rng, Rng};
-
+    use crate::cli::storage_ext::StorageExt;
     use crate::storage::AppFs;
 
     fn rand_string() -> String {

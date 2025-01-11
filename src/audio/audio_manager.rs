@@ -1,11 +1,10 @@
-use std::collections::VecDeque;
-use std::time::Duration;
-
 use anyhow::anyhow;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{
     ChannelCount, SampleFormat, SampleRate, Stream, SupportedBufferSize, SupportedStreamConfig,
 };
+use std::collections::VecDeque;
+use std::time::Duration;
 
 const DEFAULT_SAMPLING_RATE: u32 = 32000;
 

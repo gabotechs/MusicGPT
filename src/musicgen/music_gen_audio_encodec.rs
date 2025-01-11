@@ -27,10 +27,10 @@ impl MusicGenAudioEncodec {
             .expect("audio_values not found in output");
 
         if let Ok((_, data)) = audio_values.try_extract_raw_tensor::<f32>() {
-            return Ok(data.into_iter().map(|e| *e).collect());
+            return Ok(data.iter().copied().collect());
         }
         if let Ok((_, data)) = audio_values.try_extract_raw_tensor::<f16>() {
-            return Ok(data.into_iter().map(|e| f32::from(*e)).collect());
+            return Ok(data.iter().map(|e| f32::from(*e)).collect());
         }
 
         Err(ort::error::Error::new(

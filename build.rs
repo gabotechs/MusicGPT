@@ -67,7 +67,6 @@ mod build {
         Ok(())
     }
 
-
     #[derive(Deserialize, Serialize, Clone)]
     pub struct BuildInfo {
         /// absolute path to all the compiled dynamic library files.

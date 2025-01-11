@@ -5,12 +5,6 @@ use std::time::Duration;
 
 use tokio_util::sync::CancellationToken;
 
-use crate::music_gen_audio_encodec::MusicGenAudioEncodec;
-use crate::music_gen_decoder::MusicGenDecoder;
-use crate::music_gen_text_encoder::MusicGenTextEncoder;
-
-const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
-
 #[derive(Clone, Debug)]
 pub struct AudioGenerationRequest {
     pub id: String,
@@ -56,47 +50,6 @@ pub trait JobProcessor: Send + Sync {
         secs: usize,
         on_progress: Box<dyn Fn(f32) -> bool + Sync + Send + 'static>,
     ) -> ort::Result<VecDeque<f32>>;
-}
-
-pub struct MusicGenJobProcessor {
-    pub name: String,
-    pub device: String,
-    pub text_encoder: MusicGenTextEncoder,
-    pub decoder: Box<dyn MusicGenDecoder>,
-    pub audio_encodec: MusicGenAudioEncodec,
-}
-
-impl JobProcessor for MusicGenJobProcessor {
-    fn name(&self) -> String {
-        self.name.clone()
-    }
-
-    fn device(&self) -> String {
-        self.device.clone()
-    }
-
-    fn process(
-        &self,
-        prompt: &str,
-        secs: usize,
-        on_progress: Box<dyn Fn(f32) -> bool + Sync + Send + 'static>,
-    ) -> ort::Result<VecDeque<f32>> {
-        let max_len = secs * INPUT_IDS_BATCH_PER_SECOND;
-
-        let (lhs, am) = self.text_encoder.encode(prompt)?;
-        let token_stream = self.decoder.generate_tokens(lhs, am, max_len)?;
-
-        let mut data = VecDeque::new();
-        while let Ok(tokens) = token_stream.recv() {
-            data.push_back(tokens?);
-            let should_exit = on_progress(data.len() as f32 / max_len as f32);
-            if should_exit {
-                return Err(ort::Error::new("Aborted"));
-            }
-        }
-
-        self.audio_encodec.encode(data)
-    }
 }
 
 #[derive(Clone)]
@@ -249,7 +202,8 @@ mod tests {
     // TODO: for some reason this test fails in CI with a timeout.
     #[cfg(not(target_os = "macos"))]
     async fn handles_job_cancellation() -> anyhow::Result<()> {
-        let backend = AudioGenerationBackend::new(DummyJobProcessor::new(Duration::from_millis(200)));
+        let backend =
+            AudioGenerationBackend::new(DummyJobProcessor::new(Duration::from_millis(200)));
 
         let (tx, rx) = backend.run();
 

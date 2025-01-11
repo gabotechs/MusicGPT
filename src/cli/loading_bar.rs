@@ -1,10 +1,9 @@
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle};
 use std::fmt::Write;
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
-use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle};
-
-pub struct LoadingBarFactor;
+pub struct LoadingBarFactory;
 
 pub struct Bar(ProgressBar);
 
@@ -13,9 +12,9 @@ impl Bar {
         self.0.set_length(total as u64);
         self.0.set_position(elapsed as u64);
     }
-    
-    pub fn into_update_callback(self) ->  Box<dyn Fn(usize, usize) + Send + Sync + 'static> {
-        Box::new(move |el, t|  self.update_elapsed_total(el, t))
+
+    pub fn into_update_callback(self) -> Box<dyn Fn(usize, usize) + Send + Sync + 'static> {
+        Box::new(move |el, t| self.update_elapsed_total(el, t))
     }
 }
 
@@ -55,7 +54,7 @@ impl DerefMut for MultiBar {
     }
 }
 
-impl LoadingBarFactor {
+impl LoadingBarFactory {
     pub fn multi() -> MultiBar {
         MultiBar(MultiProgress::new())
     }

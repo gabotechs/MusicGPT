@@ -3,7 +3,7 @@ use specta::Type;
 use tracing::info;
 use uuid::Uuid;
 
-use crate::audio_manager::AudioManager;
+use crate::audio::AudioManager;
 use crate::backend::audio_generation_backend::BackendOutboundMsg;
 use crate::backend::music_gpt_chat::ChatEntry;
 use crate::backend::music_gpt_ws_handler::IdPair;

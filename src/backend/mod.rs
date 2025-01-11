@@ -1,25 +1,25 @@
-pub use audio_generation_backend::MusicGenJobProcessor;
+pub use audio_generation_backend::JobProcessor;
 pub use server::*;
 
-mod audio_generation_backend;
-mod server;
 #[cfg(test)]
 mod _test_utils;
-mod music_gpt_chat;
+mod audio_generation_backend;
 mod audio_generation_fanout;
-mod ws_handler;
+mod music_gpt_chat;
 mod music_gpt_ws_handler;
+mod server;
+mod ws_handler;
 
 #[cfg(test)]
 mod tests {
+    use specta::ts::{BigIntExportBehavior, ExportConfiguration};
     use std::path::{Path, PathBuf};
     use std::time::Duration;
-    use specta::ts::{BigIntExportBehavior, ExportConfiguration};
 
-    use crate::storage::AppFs;
-    use crate::backend::_test_utils::DummyJobProcessor;
     use crate::backend::RunOptions;
+    use crate::backend::_test_utils::DummyJobProcessor;
     use crate::backend::server::run;
+    use crate::storage::AppFs;
 
     #[ignore]
     #[tokio::test]

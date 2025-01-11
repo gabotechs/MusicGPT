@@ -1,6 +1,6 @@
+use crate::musicgen::logits::Logits;
 use ort::session::SessionOutputs;
 use ort::value::DynValue;
-use crate::logits::Logits;
 
 pub struct MusicGenOutputs<'r, 's> {
     outputs: SessionOutputs<'r, 's>,
