@@ -2,6 +2,7 @@ use axum::extract::WebSocketUpgrade;
 use axum::response::Html;
 use axum::routing::get;
 use axum::Router;
+use std::path::Path;
 use tower_http::services::ServeDir;
 use tracing::info;
 
@@ -9,36 +10,43 @@ use crate::backend::audio_generation_backend::{AudioGenerationBackend, JobProces
 use crate::backend::audio_generation_fanout::audio_generation_fanout;
 use crate::backend::music_gpt_ws_handler::{Info, MusicGptWsHandler};
 use crate::backend::ws_handler::WsHandler;
-use crate::storage::AppFs;
+use crate::storage::Storage;
 
-pub struct RunOptions {
+pub struct RunWebServerOptions {
+    pub name: String,
+    pub device: String,
     pub port: usize,
     pub auto_open: bool,
     pub expose: bool,
 }
 
-pub async fn run<T: JobProcessor + 'static>(
-    storage: AppFs,
+pub async fn run_web_server<T, S, P>(
+    root: P,
+    storage: S,
     processor: T,
-    opts: RunOptions,
-) -> anyhow::Result<()> {
-    let model = processor.name();
-    let device = processor.device();
-
+    opts: RunWebServerOptions,
+) -> anyhow::Result<()>
+where
+    T: JobProcessor + 'static,
+    S: Storage + 'static,
+    P: AsRef<Path>,
+{
     let (ai_tx, ai_rx) = AudioGenerationBackend::new(processor).run();
     let ai_broadcast_tx = audio_generation_fanout(ai_rx, storage.clone());
 
-    let root_dir = storage.root.clone();
     let ws_handler = MusicGptWsHandler {
         ai_tx,
         storage,
-        info: Info { model, device },
+        info: Info {
+            model: opts.name,
+            device: opts.device,
+        },
         ai_broadcast_tx,
     };
 
     let app = Router::new()
         .fallback(get(web_app))
-        .nest_service("/files", ServeDir::new(root_dir))
+        .nest_service("/files", ServeDir::new(root))
         .route(
             "/ws",
             get(|ws: WebSocketUpgrade| async move {
@@ -78,20 +86,26 @@ async fn web_app() -> Html<&'static str> {
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
-    use std::sync::atomic::{AtomicU16, Ordering};
-    use std::time::Duration;
     use futures_util::{SinkExt, StreamExt};
     use serde::de::DeserializeOwned;
     use serde::Serialize;
+    use std::sync::atomic::{AtomicU16, Ordering};
     use tokio::net::TcpStream;
     use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
     use uuid::Uuid;
 
-    use crate::backend::_test_utils::DummyJobProcessor;
-    use crate::backend::music_gpt_chat::{AiChatEntry, ChatEntry, UserChatEntry};
-    use crate::backend::music_gpt_ws_handler::{AbortGenerationRequest, ChatRequest, GenerateAudioRequest, InboundMsg, OutboundMsg};
+    #[cfg(not(target_os = "macos"))]
+    use crate::backend::music_gpt_ws_handler::AbortGenerationRequest;
+    #[cfg(not(target_os = "macos"))]
+    use std::time::Duration;
 
     use super::*;
+    use crate::backend::_test_utils::DummyJobProcessor;
+    use crate::backend::music_gpt_chat::{AiChatEntry, ChatEntry, UserChatEntry};
+    use crate::backend::music_gpt_ws_handler::{
+        ChatRequest, GenerateAudioRequest, InboundMsg, OutboundMsg,
+    };
+    use crate::storage::AppFs;
 
     #[tokio::test]
     async fn sending_a_job_processes_it() -> anyhow::Result<()> {
@@ -293,7 +307,7 @@ mod tests {
         async fn from_ws(
             ws: &mut WebSocketStream<MaybeTlsStream<TcpStream>>,
         ) -> anyhow::Result<Self> {
-            let msg = ws.next().await.unwrap().unwrap();
+            let msg = ws.next().await.unwrap()?;
             Ok(serde_json::de::from_str(msg.to_text()?)?)
         }
     }
@@ -305,12 +319,19 @@ mod tests {
     ) -> anyhow::Result<(WebSocketStream<MaybeTlsStream<TcpStream>>, String)> {
         let app_fs = AppFs::new_tmp();
         let port = PORT.fetch_add(1, Ordering::SeqCst) as usize;
-        let run_options = RunOptions {
+        let run_options = RunWebServerOptions {
+            name: "Dummy".to_string(),
+            device: "Cpu".to_string(),
             port,
             auto_open: false,
             expose: false,
         };
-        tokio::spawn(run(app_fs, processor, run_options));
+        tokio::spawn(run_web_server(
+            app_fs.root.clone(),
+            app_fs,
+            processor,
+            run_options,
+        ));
         let (ws_stream, _) = connect_async(&format!("ws://localhost:{port}/ws")).await?;
         Ok((ws_stream, format!("localhost:{port}")))
     }

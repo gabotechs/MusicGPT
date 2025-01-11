@@ -42,13 +42,11 @@ impl Job {
 }
 
 pub trait JobProcessor: Send + Sync {
-    fn name(&self) -> String;
-    fn device(&self) -> String;
     fn process(
         &self,
         prompt: &str,
         secs: usize,
-        on_progress: Box<dyn Fn(f32) -> bool + Sync + Send + 'static>,
+        on_progress: Box<dyn Fn(f32, f32) -> bool + Sync + Send + 'static>,
     ) -> ort::Result<VecDeque<f32>>;
 }
 
@@ -88,8 +86,8 @@ impl AudioGenerationBackend {
             let output_tx_clone = outbound_tx.clone();
             let abort_token = self.abort_token.clone();
             let job_id = job.req.id.clone();
-            let cbk = Box::new(move |p| {
-                let msg = BackendOutboundMsg::Progress((job_id.clone(), p));
+            let cbk = Box::new(move |elapsed, total| {
+                let msg = BackendOutboundMsg::Progress((job_id.clone(), elapsed / total));
                 let _ = output_tx_clone.send(msg);
                 abort_token.is_cancelled() || job.abort_token.is_cancelled()
             });

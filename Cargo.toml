@@ -11,6 +11,7 @@ authors = ["gb.mt.me@gmail.com"]
 
 [dependencies]
 openssl = { version = "0.10.59", features = ["vendored"] } # NOTE: neeeded for cross compilations
+rustyline = { version = "15.0.0" , features = ["with-file-history"]}
 clap = { version = "4.5.4", features = ["derive"] }
 tokenizers = "0.19.1"
 ndarray = "0.16.1"
@@ -34,7 +35,6 @@ tracing-subscriber = { version = "0.3.18", features = ["env-filter", "fmt", "tim
 async-trait = "0.1.80"
 anyhow = "1.0.83"
 uuid = { version = "1.8.0", features = ["v4", "serde"] }
-text_io = "0.1.12"
 regex = "1.10.4"
 async-stream = "0.3.5"
 hostname = "0.4.0"
@@ -47,8 +47,6 @@ specta = { version = "1.0.5", features = ["uuid", "serde", "typescript", "export
 axum = { version = "0.7.5", features = ["ws"] }
 tower-http = { version = "0.5.2", features = ["fs"] }
 open = "5.1.2"
-chrono = "0.4.38"
-scopeguard = "1.2.0"
 time = "0.3.36"
 
 [features]
