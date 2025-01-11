@@ -1,13 +1,13 @@
-use std::fmt::Write;
-use regex::Regex;
-use std::path::Path;
-use std::str::FromStr;
 use indicatif::{ProgressBar, ProgressState, ProgressStyle};
-use text_io::read;
+use regex::Regex;
+use rustyline::error::ReadlineError;
+use rustyline::DefaultEditor;
+use std::fmt::Write;
+use std::path::PathBuf;
+use std::str::FromStr;
 
 use crate::audio::{AudioManager, AudioStream};
 use crate::backend::JobProcessor;
-use crate::storage::Storage;
 
 pub struct RunTerminalOptions {
     pub init_prompt: String,
@@ -17,17 +17,11 @@ pub struct RunTerminalOptions {
     pub no_interactive: bool,
 }
 
-pub async fn run_terminal_loop<T, S, P>(
-    root: P,
-    storage: S,
+pub async fn run_terminal_loop<T: JobProcessor>(
+    root: PathBuf,
     processor: T,
     opts: RunTerminalOptions,
-) -> anyhow::Result<()>
-where
-    T: JobProcessor + 'static,
-    S: Storage + 'static,
-    P: AsRef<Path>,
-{
+) -> anyhow::Result<()> {
     let secs_re = Regex::new("--secs[ =](\\d+)")?;
     let output_re = Regex::new(r"--output[ =]([.a-zA-Z_-]+)")?;
 
@@ -40,15 +34,27 @@ where
     let mut secs = opts.init_secs;
     let mut output = opts.init_output;
 
+    let mut rl = DefaultEditor::new()?;
+    let _ = rl.load_history(&root.join("history.txt"));
+    let _ = rl.add_history_entry(&prompt);
     loop {
         if prompt.is_empty() {
-            print!(">>> ");
-            prompt = read!("{}\n");
-            if prompt == "exit" {
-                return Ok(());
-            }
+            prompt = match rl.readline(">>> ") {
+                Ok(line) => line,
+                Err(ReadlineError::Interrupted) => return Ok(()),
+                Err(ReadlineError::Eof) => return Ok(()),
+                Err(err) => return Err(anyhow::anyhow!(err)),
+            };
             secs = capture(&secs_re, &prompt).unwrap_or(secs);
             output = capture(&output_re, &prompt).unwrap_or(output);
+        }
+        if prompt.is_empty() {
+            continue;
+        }
+        let _ = rl.add_history_entry(&prompt);
+
+        if prompt == "exit" {
+            return Ok(());
         }
 
         let bar = fixed_bar("Generating audio", 1);
@@ -93,11 +99,11 @@ pub fn fixed_bar(prefix: impl Into<String>, len: usize) -> ProgressBar {
             &(prefix.into()
                 + " {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] ({eta})"),
         )
-            .unwrap()
-            .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
-                write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
-            })
-            .progress_chars("#>-"),
+        .unwrap()
+        .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
+            write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
+        })
+        .progress_chars("#>-"),
     );
     pb
 }

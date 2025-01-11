@@ -9,11 +9,11 @@ use tokio::io::AsyncWriteExt;
 // Don't know why clippy says that this is dead code,
 // it's used in app_fs.rs
 #[allow(dead_code)]
-pub trait StorageFile: AsyncWriteExt + Unpin {}
+pub trait StorageFile: AsyncWriteExt + Unpin + Send + Sync {}
 
 #[allow(unused)]
 #[async_trait]
-pub trait Storage: Sync + Send + Clone {
+pub trait Storage: Sync + Send + Clone + 'static {
     type File: StorageFile;
 
     async fn exists(&self, path: &str) -> std::io::Result<bool>;

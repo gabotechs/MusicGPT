@@ -1,26 +1,19 @@
-#[cfg(feature = "onnxruntime-from-source")]
-mod onnxruntime_lib;
-
-mod download;
-mod gpu;
-mod musicgen_models;
-mod storage_ext;
-
 use anyhow::anyhow;
 use clap::{Parser, ValueEnum};
-use directories::ProjectDirs;
-use lazy_static::lazy_static;
 use std::fmt::{Display, Formatter};
+use std::path::{Path, PathBuf};
 use tracing::warn;
 
 use crate::backend::*;
 use crate::storage::*;
-use crate::terminal::{run_terminal_loop, RunTerminalOptions};
+use crate::terminal::*;
+use crate::{gpu, musicgen_models};
+use crate::onnxruntime_lib;
 
 pub const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
 
 #[derive(Clone, Copy, ValueEnum)]
-enum Model {
+pub enum Model {
     Small,
     SmallFp16,
     SmallQuant,
@@ -105,14 +98,6 @@ struct Args {
     ui_expose: bool,
 }
 
-lazy_static! {
-    static ref PROJECT_FS: AppFs = AppFs::new(
-        ProjectDirs::from("com", "gabotechs", "musicgpt")
-            .expect("Could not load project directory")
-            .data_dir()
-    );
-}
-
 impl Args {
     fn validate(&self) -> anyhow::Result<()> {
         if self.secs < 1 {
@@ -130,20 +115,11 @@ impl Args {
     }
 }
 
-pub async fn cli() -> anyhow::Result<()> {
+pub async fn cli<S: Storage + 'static, P: AsRef<Path>>(root: P, storage: S) -> anyhow::Result<()> {
     let args = Args::parse();
     args.validate()?;
 
-    #[cfg(feature = "onnxruntime-from-source")]
-    let mut ort_builder = ort::init_from(
-        onnxruntime_lib::lookup_dynlib()
-            .await?
-            .to_str()
-            .unwrap_or_default(),
-    );
-    #[cfg(not(feature = "onnxruntime-from-source"))]
-    let mut ort_builder = ort::init();
-
+    let mut ort_builder = onnxruntime_lib::init::init(storage.clone()).await?;
     let device = if args.gpu {
         warn!("GPU support is experimental, it might not work on most platforms");
         let (gpu_device, provider) = gpu::init_gpu()?;
@@ -163,8 +139,8 @@ pub async fn cli() -> anyhow::Result<()> {
 
     if args.prompt.is_empty() {
         run_web_server(
-            &PROJECT_FS.root,
-            PROJECT_FS.clone(),
+            root,
+            storage,
             musicgen_models,
             RunWebServerOptions {
                 name: args.model.to_string(),
@@ -177,8 +153,7 @@ pub async fn cli() -> anyhow::Result<()> {
         .await
     } else {
         run_terminal_loop(
-            &PROJECT_FS.root,
-            PROJECT_FS.clone(),
+            PathBuf::from(root.as_ref()),
             musicgen_models,
             RunTerminalOptions {
                 init_prompt: args.prompt,

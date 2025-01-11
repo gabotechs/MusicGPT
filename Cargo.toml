@@ -11,6 +11,7 @@ authors = ["gb.mt.me@gmail.com"]
 
 [dependencies]
 openssl = { version = "0.10.59", features = ["vendored"] } # NOTE: neeeded for cross compilations
+rustyline = { version = "15.0.0" , features = ["with-file-history"]}
 clap = { version = "4.5.4", features = ["derive"] }
 tokenizers = "0.19.1"
 ndarray = "0.16.1"

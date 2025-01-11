@@ -1,4 +1,5 @@
 use half::f16;
+use indicatif::{ProgressBar, ProgressStyle};
 use ort::session::Session;
 use ort::value::DynValue;
 use std::collections::VecDeque;
@@ -6,16 +7,16 @@ use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 use std::time::Duration;
-use indicatif::{ProgressBar, ProgressStyle};
 use tokenizers::Tokenizer;
 
 use crate::backend::JobProcessor;
-use crate::cli::download::download_many;
 use crate::cli::{Model, INPUT_IDS_BATCH_PER_SECOND};
 use crate::musicgen::{
     MusicGenAudioEncodec, MusicGenDecoder, MusicGenMergedDecoder, MusicGenSplitDecoder,
     MusicGenTextEncoder,
 };
+use crate::storage_ext::StorageExt;
+use crate::PROJECT_FS;
 
 pub struct MusicGenModels {
     text_encoder: MusicGenTextEncoder,
@@ -181,13 +182,14 @@ impl MusicGenModels {
             ],
         };
 
-        let mut results = download_many(
-            remote_file_spec,
-            force_download,
-            "Some AI models need to be downloaded, this only needs to be done once",
-            "AI models downloaded correctly",
-        )
-        .await?;
+        let mut results = PROJECT_FS
+            .download_many(
+                remote_file_spec,
+                force_download,
+                "Some AI models need to be downloaded, this only needs to be done once",
+                "AI models downloaded correctly",
+            )
+            .await?;
 
         // First result is the decoder config.
         let config = results.pop_front().unwrap();
@@ -292,9 +294,8 @@ async fn build_sessions(
         if file.extension() != Some("onnx".as_ref()) {
             continue;
         }
-        let bar = spinner(
-            format!("Loading {:?}...", file.file_name().unwrap_or_default()).as_str(),
-        );
+        let bar =
+            spinner(format!("Loading {:?}...", file.file_name().unwrap_or_default()).as_str());
 
         let result = Session::builder()?.commit_from_file(file)?;
         bar.finish_and_clear();
