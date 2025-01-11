@@ -109,16 +109,16 @@ impl Storage for AppFs {
             }
         }
     }
+
+    fn path_buf(&self, path: &str) -> std::path::PathBuf {
+        let (abs_filepath, _, _) = self.relative_file_to_path_buf(path);
+        abs_filepath
+    }
 }
 
 impl AppFs {
     pub fn new(value: impl Into<std::path::PathBuf>) -> Self {
         Self { root: value.into() }
-    }
-
-    pub fn path_buf(&self, path: &str) -> std::path::PathBuf {
-        let (abs_filepath, _, _) = self.relative_file_to_path_buf(path);
-        abs_filepath
     }
 
     /// Gets a / separated relative path and returns:

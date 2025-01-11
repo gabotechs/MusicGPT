@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use futures_util::StreamExt;
 use tokio::io::AsyncWriteExt;
 
-use crate::storage::{Storage, StorageFile};
+use crate::storage::Storage;
 
 /// Loads a remote from the local data directory, downloading it from
 /// the remote endpoint if necessary
@@ -78,10 +78,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-    use std::time::SystemTime;
     use rand::distributions::Alphanumeric;
     use rand::{thread_rng, Rng};
+    use std::path::Path;
+    use std::time::SystemTime;
 
     use crate::cli::storage_ext::StorageExt;
     use crate::storage::AppFs;
