@@ -1,4 +1,4 @@
-mod app_fs_ext;
+mod storage_ext;
 mod download;
 mod gpu;
 mod loading_bar;

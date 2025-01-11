@@ -5,7 +5,7 @@ use axum::http::StatusCode;
 use futures_util::StreamExt;
 use tokio::io::AsyncWriteExt;
 
-use crate::storage::{AppFs, Storage};
+use crate::storage::{Storage, StorageFile};
 
 /// Loads a remote from the local data directory, downloading it from
 /// the remote endpoint if necessary
@@ -18,8 +18,8 @@ use crate::storage::{AppFs, Storage};
 /// * `cbk`: A callback for tracking progress of the download (elapsed, total)
 ///
 /// returns: Result<PathBuf, Error>
-impl AppFs {
-    pub async fn fetch_remote_data_file<Cb: Fn(usize, usize)>(
+trait StorageExt: Storage {
+    async fn fetch_remote_data_file<Cb: Fn(usize, usize)>(
         &self,
         url: &str,
         local_file: &str,
@@ -67,6 +67,8 @@ impl AppFs {
     }
 }
 
+impl<T: Storage> StorageExt for T {}
+
 fn io_err<E>(e: E) -> std::io::Error
 where
     E: Into<Box<dyn error::Error + Send + Sync>>,
@@ -78,10 +80,10 @@ where
 mod tests {
     use std::path::Path;
     use std::time::SystemTime;
-
     use rand::distributions::Alphanumeric;
     use rand::{thread_rng, Rng};
-
+    
+    use crate::cli::storage_ext::StorageExt;
     use crate::storage::AppFs;
 
     fn rand_string() -> String {
