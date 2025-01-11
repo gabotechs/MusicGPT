@@ -1,6 +1,8 @@
+use std::path::PathBuf;
+
 use crate::cli::download::download_many;
 use crate::cli::PROJECT_FS;
-use std::path::PathBuf;
+use crate::storage::Storage;
 
 include!(concat!(env!("OUT_DIR"), "/built.rs"));
 include!(concat!(env!("OUT_DIR"), "/build_info.rs"));

@@ -79,7 +79,6 @@ async fn web_app() -> Html<&'static str> {
 mod tests {
     use async_trait::async_trait;
     use std::sync::atomic::{AtomicU16, Ordering};
-    use std::time::Duration;
 
     use futures_util::{SinkExt, StreamExt};
     use serde::de::DeserializeOwned;
@@ -91,7 +90,7 @@ mod tests {
     use crate::backend::_test_utils::DummyJobProcessor;
     use crate::backend::music_gpt_chat::{AiChatEntry, ChatEntry, UserChatEntry};
     use crate::backend::music_gpt_ws_handler::{
-        AbortGenerationRequest, ChatRequest, GenerateAudioRequest, InboundMsg, OutboundMsg,
+        ChatRequest, GenerateAudioRequest, InboundMsg, OutboundMsg,
     };
 
     use super::*;
