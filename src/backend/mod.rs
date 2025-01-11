@@ -27,11 +27,13 @@ mod tests {
         let storage = AppFs::new(Path::new("/tmp/dummy-server"));
         let processor = DummyJobProcessor::new(Duration::from_millis(100));
         let options = RunOptions {
+            device: "Cpu".to_string(),
+            name: "Dummy".to_string(),
             port: 8642,
             auto_open: false,
             expose: false,
         };
-        run_web_server(&storage.root, storage, processor, options).await
+        run_web_server(storage.root.clone(), storage, processor, options).await
     }
 
     #[ignore]

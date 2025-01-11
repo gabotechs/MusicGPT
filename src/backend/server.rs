@@ -326,7 +326,7 @@ mod tests {
             auto_open: false,
             expose: false,
         };
-        tokio::spawn(run_web_server(&app_fs.root, app_fs, processor, run_options));
+        tokio::spawn(run_web_server(app_fs.root.clone(), app_fs, processor, run_options));
         let (ws_stream, _) = connect_async(&format!("ws://localhost:{port}/ws")).await?;
         Ok((ws_stream, format!("localhost:{port}")))
     }
