@@ -49,7 +49,7 @@ Precompiled binaries are available for the following platforms:
 - [Linux x86_64](https://github.com/gabotechs/MusicGPT/releases/latest/download/musicgpt-x86_64-unknown-linux-gnu)
 - [Windows](https://github.com/gabotechs/MusicGPT/releases/latest/download/musicgpt-x86_64-pc-windows-msvc.exe)
 
-Just downloading them and executing them should be enough for the supported platforms.
+Just downloading them and executing them should be enough.
 
 ### Docker (Recommend for running with CUDA)
 
