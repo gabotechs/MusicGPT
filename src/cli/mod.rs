@@ -163,7 +163,7 @@ pub async fn cli() -> anyhow::Result<()> {
     .await?;
 
     if args.prompt.is_empty() {
-        run(
+        run_web_server(
             PROJECT_FS.clone(),
             musicgen_job_processor::MusicGenJobProcessor {
                 name: args.model.to_string(),

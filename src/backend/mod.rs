@@ -18,7 +18,7 @@ mod tests {
 
     use crate::backend::RunOptions;
     use crate::backend::_test_utils::DummyJobProcessor;
-    use crate::backend::server::run;
+    use crate::backend::server::run_web_server;
     use crate::storage::AppFs;
 
     #[ignore]
@@ -31,7 +31,7 @@ mod tests {
             auto_open: false,
             expose: false,
         };
-        run(storage, processor, options).await
+        run_web_server(storage, processor, options).await
     }
 
     #[ignore]

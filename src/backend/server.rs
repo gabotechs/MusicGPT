@@ -17,7 +17,7 @@ pub struct RunOptions {
     pub expose: bool,
 }
 
-pub async fn run<T: JobProcessor + 'static>(
+pub async fn run_web_server<T: JobProcessor + 'static>(
     storage: AppFs,
     processor: T,
     opts: RunOptions,
@@ -310,7 +310,7 @@ mod tests {
             auto_open: false,
             expose: false,
         };
-        tokio::spawn(run(app_fs, processor, run_options));
+        tokio::spawn(run_web_server(app_fs, processor, run_options));
         let (ws_stream, _) = connect_async(&format!("ws://localhost:{port}/ws")).await?;
         Ok((ws_stream, format!("localhost:{port}")))
     }
