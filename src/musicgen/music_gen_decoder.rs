@@ -3,11 +3,11 @@ use std::marker::PhantomData;
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 
-use crate::delay_pattern_mask_ids::DelayedPatternMaskIds;
-use crate::music_gen_config::MusicGenConfig;
-use crate::music_gen_inputs::MusicGenInputs;
-use crate::music_gen_outputs::MusicGenOutputs;
-use crate::tensor_ops::{dupe_zeros_along_first_dim, zeros_tensor};
+use crate::musicgen::delay_pattern_mask_ids::DelayedPatternMaskIds;
+use crate::musicgen::music_gen_config::MusicGenConfig;
+use crate::musicgen::music_gen_inputs::MusicGenInputs;
+use crate::musicgen::music_gen_outputs::MusicGenOutputs;
+use crate::musicgen::tensor_ops::{dupe_zeros_along_first_dim, zeros_tensor};
 use num_traits::Zero;
 use ort::session::Session;
 use ort::tensor::PrimitiveTensorElementType;

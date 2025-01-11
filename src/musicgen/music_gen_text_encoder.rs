@@ -2,7 +2,7 @@ use ort::session::Session;
 use ort::value::{DynValue, Tensor};
 use tokenizers::Tokenizer;
 
-use crate::tensor_ops::ones_tensor;
+use crate::musicgen::tensor_ops::ones_tensor;
 
 pub struct MusicGenTextEncoder {
     pub tokenizer: Tokenizer,

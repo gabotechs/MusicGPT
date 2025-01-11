@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 use ndarray::{s, Array, Array2, Axis, Ix2, Ix3, IxDyn};
 use num_traits::FloatConst;
 use ort::tensor::ArrayExtensions;
-use ort::value::{DynValue};
+use ort::value::DynValue;
 use rand::distributions::WeightedIndex;
 use rand::{thread_rng, Rng};
 
@@ -64,7 +64,7 @@ impl Logits {
             let arr = value.try_extract_tensor::<f16>()?;
             arr.mapv(f32::from)
         };
-            
+
         let arr = arr
             .into_dimensionality::<Ix3>()
             .expect("Expected 3 dimensions");

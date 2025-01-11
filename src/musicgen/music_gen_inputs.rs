@@ -1,6 +1,6 @@
+use ort::session::SessionInputs;
 use ort::value::{DynValue, Tensor};
 use std::collections::HashMap;
-use ort::session::SessionInputs;
 
 pub struct MusicGenInputs {
     inputs: HashMap<String, DynValue>,
@@ -84,9 +84,7 @@ impl MusicGenInputs {
         self.use_cache_branch = value;
         self.inputs.insert(
             "use_cache_branch".to_string(),
-            Tensor::from_array(([1], vec![value]))
-                .unwrap()
-                .into_dyn(),
+            Tensor::from_array(([1], vec![value])).unwrap().into_dyn(),
         );
     }
 
