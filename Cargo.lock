@@ -1453,7 +1453,7 @@ dependencies = [
 
 [[package]]
 name = "musicgpt"
-version = "0.3.23"
+version = "0.3.24"
 dependencies = [
  "anyhow",
  "async-stream",
