@@ -1,12 +1,12 @@
-mod storage_ext;
+#[cfg(feature = "onnxruntime-from-source")]
+mod onnxruntime_lib;
+
 mod download;
 mod gpu;
 mod loading_bar;
-mod musicgen_builder;
 mod musicgen_job_processor;
-
-#[cfg(feature = "onnxruntime-from-source")]
-mod onnxruntime_lib;
+mod musicgen_models;
+mod storage_ext;
 
 use anyhow::anyhow;
 use clap::{Parser, ValueEnum};
@@ -145,18 +145,22 @@ pub async fn cli() -> anyhow::Result<()> {
     #[cfg(not(feature = "onnxruntime-from-source"))]
     let mut ort_builder = ort::init();
 
-    let mut device = "Cpu";
-    if args.gpu {
+    let device = if args.gpu {
         warn!("GPU support is experimental, it might not work on most platforms");
         let (gpu_device, provider) = gpu::init_gpu()?;
-        device = gpu_device;
         ort_builder = ort_builder.with_execution_providers(&[provider]);
-    }
+        gpu_device
+    } else {
+        "Cpu"
+    };
     ort_builder.commit()?;
 
-    let (text_encoder, decoder, audio_encodec) =
-        musicgen_builder::musicgen_builder(args.model, args.use_split_decoder, args.force_download)
-            .await?;
+    let musicgen_models = musicgen_models::MusicGenModels::new(
+        args.model,
+        args.use_split_decoder,
+        args.force_download,
+    )
+    .await?;
 
     if args.prompt.is_empty() {
         run(
@@ -164,9 +168,7 @@ pub async fn cli() -> anyhow::Result<()> {
             musicgen_job_processor::MusicGenJobProcessor {
                 name: args.model.to_string(),
                 device: device.to_string(),
-                text_encoder,
-                decoder,
-                audio_encodec,
+                musicgen_models,
             },
             RunOptions {
                 port: args.ui_port,
@@ -216,12 +218,12 @@ pub async fn cli() -> anyhow::Result<()> {
                 }
             }
             // First, encode the text.
-            let (last_hidden_state, attention_mask) = text_encoder.encode(&prompt)?;
+            let (last_hidden_state, attention_mask) = musicgen_models.encode_text(&prompt)?;
 
             // Second, generate tokens.
             let max_len = secs * INPUT_IDS_BATCH_PER_SECOND;
             let token_stream =
-                decoder.generate_tokens(last_hidden_state, attention_mask, max_len)?;
+                musicgen_models.generate_tokens(last_hidden_state, attention_mask, max_len)?;
             let bar = loading_bar::LoadingBarFactory::bar("Generating audio");
             let mut data = VecDeque::new();
             while let Ok(tokens) = token_stream.recv() {
@@ -230,7 +232,7 @@ pub async fn cli() -> anyhow::Result<()> {
             }
 
             // Third, encode the tokens into audio.
-            let samples = audio_encodec.encode(data)?;
+            let samples = musicgen_models.encode_audio(data)?;
 
             // Last, play the audio.
             if !args.no_playback {

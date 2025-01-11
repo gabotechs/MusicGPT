@@ -1,15 +1,13 @@
 use std::collections::VecDeque;
 
 use crate::backend::JobProcessor;
+use crate::cli::musicgen_models::MusicGenModels;
 use crate::cli::INPUT_IDS_BATCH_PER_SECOND;
-use crate::musicgen::{MusicGenAudioEncodec, MusicGenDecoder, MusicGenTextEncoder};
 
 pub struct MusicGenJobProcessor {
     pub name: String,
     pub device: String,
-    pub text_encoder: MusicGenTextEncoder,
-    pub decoder: Box<dyn MusicGenDecoder>,
-    pub audio_encodec: MusicGenAudioEncodec,
+    pub musicgen_models: MusicGenModels,
 }
 
 impl JobProcessor for MusicGenJobProcessor {
@@ -29,8 +27,8 @@ impl JobProcessor for MusicGenJobProcessor {
     ) -> ort::Result<VecDeque<f32>> {
         let max_len = secs * INPUT_IDS_BATCH_PER_SECOND;
 
-        let (lhs, am) = self.text_encoder.encode(prompt)?;
-        let token_stream = self.decoder.generate_tokens(lhs, am, max_len)?;
+        let (lhs, am) = self.musicgen_models.encode_text(prompt)?;
+        let token_stream = self.musicgen_models.generate_tokens(lhs, am, max_len)?;
 
         let mut data = VecDeque::new();
         while let Ok(tokens) = token_stream.recv() {
@@ -41,6 +39,6 @@ impl JobProcessor for MusicGenJobProcessor {
             }
         }
 
-        self.audio_encodec.encode(data)
+        self.musicgen_models.encode_audio(data)
     }
 }
