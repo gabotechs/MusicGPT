@@ -4,6 +4,7 @@ use std::fmt::Display;
 use std::path::PathBuf;
 
 use crate::cli::loading_bar::LoadingBarFactory;
+use crate::cli::storage_ext::StorageExt;
 use crate::cli::PROJECT_FS;
 use crate::storage::Storage;
 

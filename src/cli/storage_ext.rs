@@ -18,7 +18,7 @@ use crate::storage::{Storage, StorageFile};
 /// * `cbk`: A callback for tracking progress of the download (elapsed, total)
 ///
 /// returns: Result<PathBuf, Error>
-trait StorageExt: Storage {
+pub trait StorageExt: Storage {
     async fn fetch_remote_data_file<Cb: Fn(usize, usize)>(
         &self,
         url: &str,
@@ -82,7 +82,7 @@ mod tests {
     use std::time::SystemTime;
     use rand::distributions::Alphanumeric;
     use rand::{thread_rng, Rng};
-    
+
     use crate::cli::storage_ext::StorageExt;
     use crate::storage::AppFs;
 
