@@ -38,6 +38,10 @@ MusicGPT can be installed on Mac and Linux using `brew`:
 brew install gabotechs/taps/musicgpt
 ```
 
+### Windows
+
+Download and install MusicGPT's executable file [following this link](https://github.com/gabotechs/MusicGPT/releases/latest/download/musicgpt-x86_64-pc-windows-msvc.exe).
+
 ### All platforms
 
 Precompiled binaries are available for the following platforms:
@@ -46,11 +50,6 @@ Precompiled binaries are available for the following platforms:
 - [Windows](https://github.com/gabotechs/MusicGPT/releases/latest/download/musicgpt-x86_64-pc-windows-msvc.exe)
 
 Just downloading them and executing them should be enough for the supported platforms.
-
-### Windows
-
-On Windows, the executable file can be downloaded
-from [this link](https://github.com/gabotechs/MusicGPT/releases/latest/download/x86_64-pc-windows-msvc.tar.gz).
 
 ### Docker (Recommend for running with CUDA)
 
