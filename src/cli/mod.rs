@@ -119,9 +119,6 @@ lazy_static! {
     );
 }
 
-#[cfg(feature = "onnxruntime-from-source")]
-use crate::cli::musicgen_builder::musicgen_builder;
-
 impl Args {
     fn validate(&self) -> anyhow::Result<()> {
         if self.secs < 1 {
