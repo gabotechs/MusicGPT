@@ -42,8 +42,6 @@ impl Job {
 }
 
 pub trait JobProcessor: Send + Sync {
-    fn name(&self) -> String;
-    fn device(&self) -> String;
     fn process(
         &self,
         prompt: &str,

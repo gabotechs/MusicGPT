@@ -110,14 +110,6 @@ impl DummyJobProcessor {
 
 #[async_trait]
 impl JobProcessor for DummyJobProcessor {
-    fn name(&self) -> String {
-        "Dummy".to_string()
-    }
-
-    fn device(&self) -> String {
-        "Cpu".to_string()
-    }
-
     fn process(
         &self,
         prompt: &str,

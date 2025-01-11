@@ -31,7 +31,7 @@ mod tests {
             auto_open: false,
             expose: false,
         };
-        run_web_server(storage, processor, options).await
+        run_web_server(&storage.root, storage, processor, options).await
     }
 
     #[ignore]

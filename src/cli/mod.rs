@@ -4,7 +4,6 @@ mod onnxruntime_lib;
 mod download;
 mod gpu;
 mod loading_bar;
-mod musicgen_job_processor;
 mod musicgen_models;
 mod storage_ext;
 
@@ -164,13 +163,12 @@ pub async fn cli() -> anyhow::Result<()> {
 
     if args.prompt.is_empty() {
         run_web_server(
+            &PROJECT_FS.root,
             PROJECT_FS.clone(),
-            musicgen_job_processor::MusicGenJobProcessor {
+            musicgen_models,
+            RunOptions {
                 name: args.model.to_string(),
                 device: device.to_string(),
-                musicgen_models,
-            },
-            RunOptions {
                 port: args.ui_port,
                 auto_open: true,
                 expose: args.ui_expose,

@@ -1,3 +1,11 @@
+use crate::backend::JobProcessor;
+use crate::cli::download::download_many;
+use crate::cli::loading_bar::LoadingBarFactory;
+use crate::cli::{Model, INPUT_IDS_BATCH_PER_SECOND};
+use crate::musicgen::{
+    MusicGenAudioEncodec, MusicGenDecoder, MusicGenMergedDecoder, MusicGenSplitDecoder,
+    MusicGenTextEncoder,
+};
 use half::f16;
 use ort::session::Session;
 use ort::value::DynValue;
@@ -6,14 +14,6 @@ use std::path::PathBuf;
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 use tokenizers::Tokenizer;
-
-use crate::cli::download::download_many;
-use crate::cli::loading_bar::LoadingBarFactory;
-use crate::cli::Model;
-use crate::musicgen::{
-    MusicGenAudioEncodec, MusicGenDecoder, MusicGenMergedDecoder, MusicGenSplitDecoder,
-    MusicGenTextEncoder,
-};
 
 pub struct MusicGenModels {
     text_encoder: MusicGenTextEncoder,
@@ -254,6 +254,31 @@ impl MusicGenModels {
             decoder,
             audio_encodec,
         })
+    }
+}
+
+impl JobProcessor for MusicGenModels {
+    fn process(
+        &self,
+        prompt: &str,
+        secs: usize,
+        on_progress: Box<dyn Fn(f32) -> bool + Sync + Send + 'static>,
+    ) -> ort::Result<VecDeque<f32>> {
+        let max_len = secs * INPUT_IDS_BATCH_PER_SECOND;
+
+        let (lhs, am) = self.encode_text(prompt)?;
+        let token_stream = self.generate_tokens(lhs, am, max_len)?;
+
+        let mut data = VecDeque::new();
+        while let Ok(tokens) = token_stream.recv() {
+            data.push_back(tokens?);
+            let should_exit = on_progress(data.len() as f32 / max_len as f32);
+            if should_exit {
+                return Err(ort::Error::new("Aborted"));
+            }
+        }
+
+        self.encode_audio(data)
     }
 }
 

@@ -78,7 +78,7 @@ pub struct MusicGptWsHandler<S: Storage> {
 }
 
 #[async_trait]
-impl<S: Storage + 'static> WsHandler for MusicGptWsHandler<S> {
+impl<S: Storage> WsHandler for MusicGptWsHandler<S> {
     type Inbound = InboundMsg;
     type Outbound = OutboundMsg;
 
