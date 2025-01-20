@@ -208,15 +208,6 @@ pub mod init {
         }
         Ok(())
     }
-
-    #[test]
-    fn test_extract_zip() {
-        extract(
-            PathBuf::from("/Users/gabriel/Downloads/onnxruntime-win-x64-1.20.1.zip"),
-            PathBuf::from(env::current_dir().unwrap()),
-        )
-        .unwrap()
-    }
 }
 
 #[cfg(feature = "onnxruntime-from-cdn")]
