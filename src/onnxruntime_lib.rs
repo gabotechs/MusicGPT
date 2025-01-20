@@ -64,6 +64,7 @@ pub mod init {
     use crate::storage_ext::StorageExt;
     use flate2::bufread::GzDecoder;
     use ort::environment::EnvironmentBuilder;
+    use std::env;
     use std::env::consts::OS;
     use std::fs::File;
     use std::io::BufReader;
@@ -135,9 +136,9 @@ pub mod init {
         let mainlib_path = storage.path_buf(&format!(
             "dynlibs/{ONNXRUNTIME_VERSION}/{uncompressed_dirname}/lib/{mainlib}"
         ));
-        
+
         if mainlib_path.exists() {
-            return Ok(mainlib_path)
+            return Ok(mainlib_path);
         }
 
         // If there's no local file, attempt to download it from a GitHub release.
@@ -166,7 +167,7 @@ pub mod init {
     }
 
     fn extract(archive_path: PathBuf, output_dir: PathBuf) -> anyhow::Result<()> {
-        if archive_path.ends_with("zip") {
+        if archive_path.extension() == Some(std::ffi::OsStr::new("zip")) {
             extract_zip(archive_path, output_dir)
         } else {
             extract_tar_gz(archive_path, output_dir)
@@ -206,6 +207,15 @@ pub mod init {
             }
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_extract_zip() {
+        extract(
+            PathBuf::from("/Users/gabriel/Downloads/onnxruntime-win-x64-1.20.1.zip"),
+            PathBuf::from(env::current_dir().unwrap()),
+        )
+        .unwrap()
     }
 }
 
