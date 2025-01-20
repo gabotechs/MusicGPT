@@ -173,6 +173,6 @@ jobs:
       - if: runner.os != 'macOS'
         run: sed -i 's/^version = ".*"/version = "${{ needs.tag.outputs.version }}"/' Cargo.toml
 
-      - run: cargo build --target ${{ matrix.target }} --features ${{ matrix.features }}
+      - run: cargo build --release --target ${{ matrix.target }} --features ${{ matrix.features }}
       - run: .github/upload-artifacts.sh ${{ matrix.target }} ${{ needs.tag.outputs.version }}
         shell: bash
