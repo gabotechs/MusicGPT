@@ -1,25 +1,28 @@
-use std::collections::VecDeque;
-use std::error;
-use std::fmt::{Display, Write};
-use std::path::PathBuf;
 use async_trait::async_trait;
 use axum::http::StatusCode;
 use futures_util::StreamExt;
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle};
 use log::info;
+use std::collections::VecDeque;
+use std::error;
+use std::fmt::{Display, Write};
+use std::path::PathBuf;
 use tokio::io::AsyncWriteExt;
 
 use crate::storage::Storage;
 
+
 #[async_trait]
-pub trait StorageExt: Storage
-{
-    async fn download_many<T: Display + Send + Sync + 'static>(
+pub trait StorageExt: Storage {
+    async fn download_many<
+        T1: Display + Send + Sync + 'static,
+        T2: Display + Send + Sync + 'static,
+    >(
         &self,
-        remote_file_spec: Vec<(T, T)>,
+        remote_file_spec: Vec<(T1, T2)>,
         force_download: bool,
-        on_download_msg: &str,
-        on_finished_msg: &str,
+        on_download_msg: impl Display + Send + Sync + 'static,
+        on_finished_msg: impl Display + Send + Sync + 'static,
     ) -> anyhow::Result<VecDeque<PathBuf>> {
         let mut has_to_download = force_download;
         for (_, local_filename) in remote_file_spec.iter() {
@@ -128,21 +131,21 @@ pub fn download_bar(file: &str) -> ProgressBar {
         ProgressStyle::with_template(
             "{file:>32} {spinner:.green} [{wide_bar:.cyan/blue}] {bytes}/{total_bytes}",
         )
-            .unwrap()
-            .with_key("file", move |state: &ProgressState, w: &mut dyn Write| {
-                if file_string.len() > NAME_LEN {
-                    let el = state.elapsed().as_millis() as usize;
-                    let offset = (el / NAME_SHIFT_INTERVAL) % (file_string.len() - NAME_LEN + 1);
-                    let view = &file_string[offset..offset + NAME_LEN];
-                    write!(w, "{view: >w$}", w = NAME_LEN).unwrap();
-                } else {
-                    write!(w, "{file_string: >w$}", w = NAME_LEN).unwrap();
-                }
-            })
-            .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
-                write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
-            })
-            .progress_chars("#>-"),
+        .unwrap()
+        .with_key("file", move |state: &ProgressState, w: &mut dyn Write| {
+            if file_string.len() > NAME_LEN {
+                let el = state.elapsed().as_millis() as usize;
+                let offset = (el / NAME_SHIFT_INTERVAL) % (file_string.len() - NAME_LEN + 1);
+                let view = &file_string[offset..offset + NAME_LEN];
+                write!(w, "{view: >w$}", w = NAME_LEN).unwrap();
+            } else {
+                write!(w, "{file_string: >w$}", w = NAME_LEN).unwrap();
+            }
+        })
+        .with_key("eta", |state: &ProgressState, w: &mut dyn Write| {
+            write!(w, "{:.1}s", state.eta().as_secs_f64()).unwrap()
+        })
+        .progress_chars("#>-"),
     );
     pb
 }

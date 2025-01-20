@@ -6,7 +6,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-#[cfg(not(feature = "onnxruntime-from-source"))]
+#[cfg(all(
+    not(feature = "onnxruntime-from-github"),
+    not(feature = "onnxruntime-from-source")
+))]
+mod build {
+    pub(crate) fn build() -> Result<(), Box<dyn std::error::Error>> {
+        // nothing.
+        Ok(())
+    }
+}
+
+#[cfg(feature = "onnxruntime-from-github")]
 mod build {
     pub(crate) fn build() -> Result<(), Box<dyn std::error::Error>> {
         // nothing.
