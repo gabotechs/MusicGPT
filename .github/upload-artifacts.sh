@@ -8,7 +8,6 @@ VERSION="$2"
 
 BIN=musicgpt
 RELEASE_DIR=target/release
-BUILD_HASH=$(cat $BUILD_HASH_FILE)
 
 if [ ! -f $RELEASE_DIR/$BIN ]; then
   echo "No binary found in $RELEASE_DIR/$BIN"
@@ -35,12 +34,15 @@ else
   gh release upload "v$VERSION" "$BIN-$TARGET"
 fi
 
-pushd "$ONNXRUNTIME_BUILD_DIR/$BUILD_HASH" >/dev/null
-for file in $(ls *.{so,dylib,dll} 2> /dev/null); do
-  echo "Moving $file to $TARGET-$file..."
-  mv "$file" "$TARGET-$file"
-  echo "Uploading $TARGET-$file to github release v$VERSION..."
-  gh release upload "v$VERSION" "$TARGET-$file"
-done
-echo "Done!"
-popd >/dev/null
+if [ -f "$BUILD_HASH_FILE" ]; then
+  BUILD_HASH=$(cat "$BUILD_HASH_FILE")
+  pushd "$ONNXRUNTIME_BUILD_DIR/$BUILD_HASH" >/dev/null
+  for file in $(ls *.{so,dylib,dll} 2> /dev/null); do
+    echo "Moving $file to $TARGET-$file..."
+    mv "$file" "$TARGET-$file"
+    echo "Uploading $TARGET-$file to github release v$VERSION..."
+    gh release upload "v$VERSION" "$TARGET-$file"
+  done
+  echo "Done!"
+  popd >/dev/null
+fi

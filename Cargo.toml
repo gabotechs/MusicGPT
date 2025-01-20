@@ -39,6 +39,9 @@ regex = "1.10.4"
 async-stream = "0.3.5"
 hostname = "0.4.0"
 built = "0.7.5"
+flate2 = "1.0"
+tar = "0.4"
+zip = "2.2.2"
 
 # Web UI deps, potentially hide behind a flag
 tokio-util = "0.7.11"
@@ -50,11 +53,12 @@ open = "5.1.2"
 time = "0.3.36"
 
 [features]
-default = ["onnxruntime-from-cdn"]
+default = ["onnxruntime-from-github"]
 coreml = ["ort/coreml"]
 tensorrt = ["ort/tensorrt"]
 cuda = ["ort/cuda"]
 onnxruntime-from-source = ["ort/load-dynamic"]
+onnxruntime-from-github = ["ort/load-dynamic"]
 onnxruntime-from-cdn = ["ort/copy-dylibs", "ort/download-binaries"]
 
 [build-dependencies]

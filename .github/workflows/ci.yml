@@ -46,7 +46,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: cargo test --no-default-features --features onnxruntime-from-source
+      - run: cargo test
 
   smoke-test:
     strategy:
@@ -58,7 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
-      - run: cargo run --release --no-default-features --features onnxruntime-from-source -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
+      - run: cargo run --release -- 'Create a LoFi song' --secs 1 --model small-quant --no-interactive --no-playback
 
   tag:
     if: github.ref == 'refs/heads/main'
@@ -149,10 +149,13 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+            features: cuda
           - os: macos-latest
             target: aarch64-apple-darwin
+            features: coreml
           - os: windows-2022
             target: x86_64-pc-windows-msvc
+            features: cuda
 
     runs-on: ${{ matrix.os }}
     env:
@@ -170,6 +173,6 @@ jobs:
       - if: runner.os != 'macOS'
         run: sed -i 's/^version = ".*"/version = "${{ needs.tag.outputs.version }}"/' Cargo.toml
 
-      - run: cargo build --no-default-features --release --target ${{ matrix.target }} --features onnxruntime-from-source
+      - run: cargo build --target ${{ matrix.target }} --features ${{ matrix.features }}
       - run: .github/upload-artifacts.sh ${{ matrix.target }} ${{ needs.tag.outputs.version }}
         shell: bash
