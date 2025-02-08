@@ -1,14 +1,15 @@
 use anyhow::anyhow;
 use clap::{Parser, ValueEnum};
+use directories::ProjectDirs;
 use std::fmt::{Display, Formatter};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tracing::warn;
 
 use crate::backend::*;
+use crate::onnxruntime_lib;
 use crate::storage::*;
 use crate::terminal::*;
 use crate::{gpu, musicgen_models};
-use crate::onnxruntime_lib;
 
 pub const INPUT_IDS_BATCH_PER_SECOND: usize = 50;
 
@@ -65,6 +66,10 @@ struct Args {
     #[arg(long, default_value = "false")]
     force_download: bool,
 
+    /// Overrides the default data storage path.
+    #[arg(long, default_value = None)]
+    data_path: Option<PathBuf>,
+
     /// Use the device's GPU for inference if available. GPU support is experimental.
     #[arg(long, default_value = "false")]
     gpu: bool,
@@ -115,9 +120,19 @@ impl Args {
     }
 }
 
-pub async fn cli<S: Storage + 'static, P: AsRef<Path>>(root: P, storage: S) -> anyhow::Result<()> {
+pub async fn cli() -> anyhow::Result<()> {
     let args = Args::parse();
     args.validate()?;
+
+    let storage = AppFs::new(
+        args.data_path.unwrap_or(
+            ProjectDirs::from("com", "gabotechs", "musicgpt")
+                .expect("Could not load project directory")
+                .data_dir()
+                .into(),
+        ),
+    );
+    let root = storage.root.clone();
 
     let mut ort_builder = onnxruntime_lib::init::init(storage.clone()).await?;
     let device = if args.gpu {
@@ -131,6 +146,7 @@ pub async fn cli<S: Storage + 'static, P: AsRef<Path>>(root: P, storage: S) -> a
     ort_builder.commit()?;
 
     let musicgen_models = musicgen_models::MusicGenModels::new(
+        storage.clone(),
         args.model,
         args.use_split_decoder,
         args.force_download,
@@ -153,7 +169,7 @@ pub async fn cli<S: Storage + 'static, P: AsRef<Path>>(root: P, storage: S) -> a
         .await
     } else {
         run_terminal_loop(
-            PathBuf::from(root.as_ref()),
+            root,
             musicgen_models,
             RunTerminalOptions {
                 init_prompt: args.prompt,
