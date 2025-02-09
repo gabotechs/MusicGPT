@@ -15,8 +15,8 @@ use crate::musicgen::{
     MusicGenAudioEncodec, MusicGenDecoder, MusicGenMergedDecoder, MusicGenSplitDecoder,
     MusicGenTextEncoder,
 };
+use crate::storage::Storage;
 use crate::storage_ext::StorageExt;
-use crate::PROJECT_FS;
 
 pub struct MusicGenModels {
     text_encoder: MusicGenTextEncoder,
@@ -46,7 +46,8 @@ impl MusicGenModels {
         self.audio_encodec.encode(tokens)
     }
 
-    pub async fn new(
+    pub async fn new<S: Storage>(
+        storage: S,
         model: Model,
         use_split_decoder: bool,
         force_download: bool,
@@ -182,7 +183,7 @@ impl MusicGenModels {
             ],
         };
 
-        let mut results = PROJECT_FS
+        let mut results = storage
             .download_many(
                 remote_file_spec,
                 force_download,
